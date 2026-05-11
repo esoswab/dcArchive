@@ -1136,9 +1136,9 @@ http.createServer(async (req, res) => {
   #   (SQLite Engine Activated)                     #
   #                                                #
   #   📡 Server : http://localhost:${PORT}          #
-  #   📦 Posts  : ${stats.total.toLocaleString()} items (${stats.deleted.toLocaleString()} deleted)
-  #   💬 Cmt    : ${cmtStats.cnt.toLocaleString()} posts recovered
-  #   🖼️ Media  : ${mediaFiles.toLocaleString()} files cached
+  #   📦 Posts  : ${(stats?.total || 0).toLocaleString()} items (${(stats?.deleted || 0).toLocaleString()} deleted)
+  #   💬 Cmt    : ${(cmtStats?.cnt || 0).toLocaleString()} posts recovered
+  #   🖼️ Media  : ${(mediaFiles || 0).toLocaleString()} files cached
   #                                                #
   ##################################################
   [System] ${new Date().toLocaleString()} 아카이브 엔진 가동 중...
