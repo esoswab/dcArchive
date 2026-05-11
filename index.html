@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VRChat 마이너 갤러리 저장소</title>
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --panel: #fff;
+      --line: #d5d9e0;
+      --line-2: #e7eaf0;
+      --text: #1f2937;
+      --muted: #667085;
+      --accent: #3568d4;
+      --soft: #eef4ff;
+      --shadow: 0 10px 30px rgba(15, 23, 42, .08)
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #f9fafb 0%, var(--bg) 100%)
+    }
+
+    a {
+      text-decoration: none;
+      color: inherit
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 12px 36px
+    }
+
+    .board,
+    .article {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: var(--shadow)
+    }
+
+    .head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line-2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: #fff
+    }
+
+    .titlebox strong {
+      font-size: 18px
+    }
+
+    .toolbar,
+    .searchbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center
+    }
+
+    .searchbar select {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 8px;
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+      cursor: pointer
+    }
+
+    .searchbar input {
+      width: min(100%, 220px);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      outline: none
+    }
+
+    .searchbar input:focus,
+    .searchbar select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(53, 104, 212, .12)
+    }
+
+    .count {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    .btn,
+    .page {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px
+    }
+
+    .btn.active,
+    .page.current {
+      background: #0f172a;
+      color: #fff;
+      border-color: #0f172a
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed
+    }
+
+    thead th {
+      background: #f8fafc;
+      color: #475467;
+      font-size: 13px;
+      text-align: left;
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line-2);
+      font-weight: 700
+    }
+
+    tbody td {
+      border-bottom: 1px solid var(--line-2);
+      padding: 12px;
+      font-size: 14px;
+      vertical-align: top;
+      word-break: keep-all
+    }
+
+    tbody tr:hover {
+      background: #fafcff
+    }
+
+    .num {
+      width: 90px;
+      color: #475467
+    }
+
+    .cat {
+      width: 92px
+    }
+
+    .title {
+      width: auto
+    }
+
+    .author {
+      width: 120px
+    }
+
+    .date {
+      width: 110px;
+      white-space: nowrap
+    }
+
+    .like {
+      width: 64px;
+      text-align: right
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--soft);
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 700
+    }
+
+    .badge.deleted {
+      background: #dc2626;
+      color: #fff
+    }
+
+    .badge.notice {
+      background: #ecfdf5;
+      color: #047857
+    }
+
+    .badge.best {
+      background: #fff7d6;
+      color: #9a6700
+    }
+
+    .title-link {
+      font-weight: 700;
+      color: #0f172a
+    }
+
+    .title-link:hover {
+      color: var(--accent)
+    }
+
+    .pagination {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      padding: 14px;
+      background: #fff
+    }
+
+    .article {
+      display: none;
+      margin-top: 16px
+    }
+
+    .article.active {
+      display: block
+    }
+
+    .article-shell {
+      padding: 18px
+    }
+
+    .article-title {
+      margin: 0 0 10px;
+      font-size: clamp(22px, 3vw, 28px);
+      line-height: 1.35
+    }
+
+    .article-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 12px 14px;
+      background: #fafbfc;
+      border: 1px solid var(--line-2);
+      border-radius: 14px
+    }
+
+    .article-meta strong {
+      color: #111827
+    }
+
+    .article-body img,
+    .article-body iframe,
+    .article-body embed {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 10px 0
+    }
+
+    .video-placeholder:hover {
+      background: #e2e8f0 !important;
+      border-color: #94a3b8 !important;
+      color: #1e293b !important
+    }
+
+    .article-body {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line-2);
+      line-height: 1.7;
+      font-size: 15px;
+      color: #374151;
+      word-break: break-all;
+    }
+
+    .article-images {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px
+    }
+
+    .article-images img {
+      max-width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line-2);
+      background: #f8fafc
+    }
+
+    .comment-wrap {
+      margin-top: 18px;
+      border-top: 1px solid var(--line-2);
+      padding-top: 14px
+    }
+
+    .comment-wrap h3 {
+      margin: 0 0 10px;
+      font-size: 17px
+    }
+
+    .comment {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 10px;
+      padding: 11px 12px;
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      background: #fbfcfe;
+      margin-bottom: 8px
+    }
+
+    .comment .name {
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 3px
+    }
+
+    .comment .meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px
+    }
+
+    .comment p {
+      margin: 0;
+      line-height: 1.7;
+      font-size: 14px;
+      color: #243041
+    }
+
+    .back {
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 700
+    }
+
+    .usericon {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-left: 4px;
+      vertical-align: middle;
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+
+    .usericon.f {
+      background-image: url('https://nstatic.dcinside.com/dc/w/images/fix_nik.gif');
+    }
+
+    .usericon.s {
+      background-image: url('https://nstatic.dcinside.com/dc/w/images/nik.gif');
+    }
+
+    .usericon.g {
+      background-image: url('https://nstatic.dcinside.com/dc/w/images/fix_managernik.gif');
+    }
+
+    .usericon.m {
+      background-image: url('https://nstatic.dcinside.com/dc/w/images/fix_sub_managernik.gif');
+    }
+
+    .usericon.i {
+      background-image: url('https://nstatic.dcinside.com/dc/w/images/fix_nik.gif');
+    }
+
+    /* 앱도 고닉으로 표시 */
+    .footer {
+      margin-top: 14px;
+      text-align: center;
+      color: #6b7280;
+      font-size: 12px
+    }
+
+    .hidden {
+      display: none !important
+    }
+
+    .matched-comment {
+      padding: 4px 0 8px 24px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px
+    }
+
+    .matched-comment .icon {
+      color: var(--accent);
+      font-weight: 700
+    }
+
+    .matched-comment .c-body {
+      color: #4b5563
+    }
+
+    .matched-comment b {
+      color: var(--text);
+      font-weight: 700;
+      margin-right: 6px
+    }
+
+    mark {
+      background: #fef08a;
+      color: #854d0e;
+      padding: 0 2px;
+      border-radius: 2px
+    }
+
+    @media (max-width:860px) {
+
+      .author,
+      .date,
+      .like {
+        display: none
+      }
+
+      .num {
+        width: 72px
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <section class="board" id="boardView">
+      <div class="head">
+        <div class="titlebox"><a href="/" style="text-decoration:none;color:inherit"><strong>VRChat 마이너 갤러리
+              저장소</strong></a></div>
+        <div class="searchbar">
+          <span class="count" id="resultCount">불러오는 중...</span>
+          <select id="searchMode" class="btn" style="padding:4px">
+            <option value="title_body">제목+본문</option>
+            <option value="comment">댓글</option>
+            <option value="author">글쓴이</option>
+            <option value="total">전체(글+댓글)</option>
+          </select>
+          <input id="searchInput" type="search" placeholder="검색어 입력..." />
+        </div>
+        <div class="toolbar">
+          <button class="btn active" data-mode="all">전체</button>
+          <button class="btn" data-mode="notice">공지</button>
+          <button class="btn" data-mode="recommand">개념글</button>
+          <button class="btn" data-mode="deleted">삭제글</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="num">번호</th>
+            <th class="cat">분류</th>
+            <th class="title">제목</th>
+            <th class="author">글쓴이</th>
+            <th class="date">날짜</th>
+            <th class="like">추천</th>
+          </tr>
+        </thead>
+        <tbody id="postList"></tbody>
+      </table>
+      <div class="pagination" id="pagination"></div>
+    </section>
+
+    <section class="article" id="articleView">
+      <div class="head">
+        <div class="titlebox">
+          <strong>글 상세</strong>
+          <button id="btnRefresh" class="btn" style="margin-left:10px; padding:4px 8px; font-size:11px; vertical-align:middle;">수동 갱신</button>
+          <button id="btnWatch" class="btn" style="margin-left:5px; padding:4px 8px; font-size:11px; vertical-align:middle;">⭐ 감시 추가</button>
+        </div>
+        <a class="back" href="/list/vr" id="backToList">목록으로 돌아가기</a>
+      </div>
+      <div class="article-shell">
+        <h2 class="article-title" id="postTitle">글을 선택하세요</h2>
+        <div class="article-meta">
+          <div><strong>분류</strong> <span id="postCategory">-</span></div>
+          <div><strong>글쓴이</strong> <span id="postAuthor">-</span></div>
+          <div><strong>추천</strong> <span id="postLikes">-</span></div>
+          <div><strong>댓글</strong> <span id="postComments">-</span></div>
+          <div><strong>조회</strong> <span id="postViews">-</span></div>
+          <div><strong>작성시각</strong> <span id="articleDate">-</span></div>
+        </div>
+        <div class="article-body" id="postBody">본문을 불러오는 중입니다.</div>
+        <div class="article-images" id="postImages"></div>
+        <div class="comment-wrap">
+          <h3>댓글</h3>
+          <div id="commentList"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      <div>mgall 스타일 VRChat 백업 저장소</div>
+      <div id="storageStats" style="margin-top:8px; font-size:12px; color:var(--text-3); opacity:0.8;">
+        저장소 현황 불러오는 중...
+      </div>
+    </div>
+  </div>
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const pageParam = Number(qs.get('page')) || 1;
+    const modeParam = qs.get('mode') || 'all';
+    const queryParam = qs.get('q') || '';
+    const noFromPath = location.pathname.startsWith('/view/vr/') ? location.pathname.split('/').pop() : '';
+    const boardView = document.getElementById('boardView');
+    const articleView = document.getElementById('articleView');
+    const input = document.getElementById('searchInput');
+    const searchModeSelect = document.getElementById('searchMode');
+    const resultCount = document.getElementById('resultCount');
+    const postList = document.getElementById('postList');
+    const pagination = document.getElementById('pagination');
+    const modeButtons = Array.from(document.querySelectorAll('[data-mode]'));
+    const postTitle = document.getElementById('postTitle');
+    const postCategory = document.getElementById('postCategory');
+    const postAuthor = document.getElementById('postAuthor');
+    const postLikes = document.getElementById('postLikes');
+    const postComments = document.getElementById('postComments');
+    const postViews = document.getElementById('postViews');
+    const articleDate = document.getElementById('articleDate');
+    const postBody = document.getElementById('postBody');
+    const postImages = document.getElementById('postImages');
+    const commentList = document.getElementById('commentList');
+    const rows = [];
+    let currentPage = pageParam;
+    let currentMode = modeParam;
+    let currentQuery = queryParam;
+    let firstPage = 1;
+    let lastPage = 1;
+
+    function showList() { boardView.classList.remove('hidden'); articleView.classList.remove('active'); }
+    function showArticle() { boardView.classList.add('hidden'); articleView.classList.add('active'); }
+    function syncCount(v) { resultCount.textContent = `${v}개 표시 중`; }
+    function renderComments(comments) {
+      const filtered = comments.filter(c => (c.name || '').trim() !== '댓글돌이');
+      commentList.innerHTML = filtered.length
+        ? filtered.map((c) => `<div class="comment" style="margin-left:${Math.min(24, (c.depth || 0) * 14)}px"><div><div class="name">${c.name || '익명'}</div><p class="meta">${c.meta || ''}</p></div><p>${c.body || ''}</p></div>`).join('')
+        : '<div class="comment"><div><div class="name">댓글 없음</div><p class="meta">-</p></div><p>수집된 댓글이 없습니다.</p></div>';
+    }
+    function renderImages(images) {
+      if (!images || !images.length) {
+        postImages.innerHTML = '';
+        return;
+      }
+      postImages.innerHTML = images.map((src) => `<a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="" loading="lazy" decoding="async"></a>`).join('');
+    }
+    function setPagination(page, pages) {
+      currentPage = page;
+      firstPage = pages.firstPage || 1;
+      lastPage = pages.lastPage || page;
+      const nums = [];
+      const start = Math.max(firstPage, page - 2);
+      for (let i = 0; i < 5; i++) nums.push(start + i);
+      pagination.innerHTML = `
+        <button class="page" data-page="${firstPage}">맨처음</button>
+        <button class="page" data-page="${Math.max(firstPage, page - 1)}">이전</button>
+        ${nums.map(n => `<button class="page ${n === page ? 'current' : ''}" data-page="${n}">${n}</button>`).join('')}
+        <button class="page" data-page="${Math.min(lastPage, page + 1)}">다음</button>
+        <button class="page" data-page="${lastPage}">맨끝</button>
+      `;
+    }
+    function applyFilter() {
+      // 이제 서버가 모든 검색 필터링을 수행하므로 브라우저에서는 개수 동기화만 진행
+      syncCount(rows.length);
+    }
+    function modeBadge(item) {
+      const isDeleted = item.category === '삭제글' || item.deleted;
+      if (isDeleted) return '<span class="badge deleted">삭제글</span>';
+      if (item.type === 'notice') return '<span class="badge notice">공지</span>';
+      if (item.type === 'best') return '<span class="badge best">개념</span>';
+      return `<span class="badge">${item.category || '일반'}</span>`;
+    }
+    function highlight(text, q) {
+      if (!q) return text;
+      const re = new RegExp(`(${q})`, 'gi');
+      return text.replace(re, '<mark>$1</mark>');
+    }
+    function userIcon(type) {
+      if (!type) return '';
+      return `<span class="usericon ${type}"></span>`;
+    }
+    function renderList(items) {
+      const q = input.value.trim();
+      postList.innerHTML = items.map((item) => {
+        let html = `
+        <tr data-no="${item.no}" data-type="${item.type || 'normal'}" data-deleted="${item.deleted ? '1' : '0'}">
+          <td class="num">${item.num || item.no}</td>
+          <td class="cat">${modeBadge(item)}</td>
+          <td class="title">
+            <a class="title-link" href="/view/vr/${item.no}?page=${currentPage}&mode=${currentMode}">
+              ${highlight(item.title || '(제목 없음)', q)}
+            </a>
+            ${(item.commentCount && item.commentCount !== '0') ? `<span style="color:var(--accent);font-size:12px;margin-left:4px;font-weight:700">[${item.commentCount}]</span>` : ''}
+          </td>
+          <td class="author">${highlight(item.author || '', q) + userIcon(item.authorIcon)}</td>
+          <td class="date">${item.date || ''}</td>
+          <td class="like">${item.likes || 0}</td>
+        </tr>`;
+
+        if (item.matchedComments && item.matchedComments.length) {
+          item.matchedComments.forEach(c => {
+            html += `
+            <tr class="comment-row">
+              <td colspan="2"></td>
+              <td colspan="4">
+                <div class="matched-comment">
+                  <span class="icon">L</span>
+                  <span class="c-body"><b>${highlight(c.name, q)}</b> ${highlight(c.body, q)}</span>
+                </div>
+              </td>
+            </tr>`;
+          });
+          if (item.totalMatched > 10) {
+            html += `
+             <tr class="comment-row">
+               <td colspan="2"></td>
+               <td colspan="4">
+                 <div class="matched-comment" style="color:var(--accent);font-weight:700;padding-top:0">
+                   <span class="icon">L</span>
+                   <span class="c-body">... 외 ${item.totalMatched - 10}개의 댓글이 더 매칭되었습니다. (상세 페이지에서 확인)</span>
+                 </div>
+               </td>
+             </tr>`;
+          }
+        }
+        return html;
+      }).join('');
+      // [수정] 진짜 게시글 줄(data-no가 있는 줄)만 골라서 이벤트를 겁니다.
+      rows.splice(0, rows.length, ...Array.from(document.querySelectorAll('#postList tr[data-no]')));
+      rows.forEach((row) => {
+        const link = row.querySelector('a');
+        if (link) {
+          link.addEventListener('click', async (e) => { e.preventDefault(); await openPost(row.dataset.no, currentPage); });
+        }
+      });
+      applyFilter();
+    }
+    async function loadPage(page) {
+      resultCount.textContent = '불러오는 중...';
+      const sm = searchModeSelect.value;
+      const res = await fetch(`/api/list?page=${encodeURIComponent(page)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
+      const data = await res.json();
+      setPagination(page, data);
+      renderList(data.items || []);
+      history.replaceState(null, '', `/list/vr?page=${page}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
+    }
+    async function openPost(no, page) {
+      showArticle();
+      postTitle.textContent = '불러오는 중...';
+      postBody.textContent = '본문을 불러오는 중입니다.';
+      const res = await fetch(`/api/post?no=${encodeURIComponent(no)}&page=${encodeURIComponent(page || currentPage)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}`);
+      const data = await res.json();
+
+      // 삭제 여부와 상관없이 저장된 데이터가 있다면 출력
+      postTitle.innerHTML = data.title || '상세 페이지';
+      postCategory.textContent = data.category || '-';
+      postAuthor.innerHTML = (data.author || '-') + userIcon(data.authorIcon);
+      postLikes.textContent = data.likes || '-';
+      postComments.textContent = data.commentCount || (data.comments ? data.comments.length : '-');
+      postViews.textContent = data.views || '-';
+      articleDate.textContent = data.date || '-';
+
+      // 본문 출력 (보존된 HTML이 있으면 우선 사용)
+      if (data.contentHtml && data.contentHtml.trim()) {
+        postBody.innerHTML = data.contentHtml;
+        postImages.style.display = 'none'; // 레이아웃 보존 시 하단 이미지 목록 숨김
+      } else if (data.rawText) {
+        postBody.textContent = data.rawText;
+        postImages.style.display = 'block';
+        renderImages(data.localImages || []);
+      } else {
+        postBody.textContent = '본문 데이터가 없습니다.';
+        postImages.style.display = 'block';
+      }
+
+      // 감시 버튼 초기화 및 이벤트
+      const btnWatch = document.getElementById('btnWatch');
+      if (btnWatch) {
+        // 초기 상태 확인
+        const statusRes = await fetch(`/api/watch-status?no=${no}`);
+        const statusJson = await statusRes.json();
+        updateWatchBtn(statusJson.isWatching);
+
+        btnWatch.onclick = async () => {
+          const res = await fetch(`/api/watch-toggle?no=${no}`);
+          const resJson = await res.json();
+          if (resJson.success) {
+            updateWatchBtn(resJson.isWatching);
+          }
+        };
+      }
+
+      function updateWatchBtn(isWatching) {
+        if (isWatching) {
+          btnWatch.innerHTML = '<span style="color:#facc15">⭐</span> 감시 해제';
+          btnWatch.style.borderColor = '#facc15';
+        } else {
+          btnWatch.innerHTML = '⭐ 감시 추가';
+          btnWatch.style.borderColor = '';
+        }
+      }
+
+      // 수동 갱신 버튼 이벤트 복구
+      const refreshBtn = document.getElementById('btnRefresh');
+      if (refreshBtn) {
+        refreshBtn.onclick = async () => {
+          if (!confirm('원본 사이트에서 데이터를 다시 긁어올까요?')) return;
+          refreshBtn.textContent = '갱신 중...';
+          const r = await fetch(`/api/refresh-post?no=${no}`);
+          const resJson = await r.json();
+          if (resJson.success) {
+            alert('갱신 완료!');
+            await openPost(no, page);
+          } else {
+            alert('갱신 실패: ' + (resJson.error || '알 수 없는 오류'));
+          }
+          refreshBtn.textContent = '수동 갱신';
+        };
+      }
+      renderComments(data.comments || []);
+      history.replaceState(null, '', `/view/vr/${no}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
+    }
+
+    let searchTimer = null;
+    const triggerSearch = () => {
+      currentQuery = input.value.trim();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(async () => {
+        currentPage = 1;
+        await loadPage(1);
+      }, 250);
+    };
+    input.addEventListener('input', triggerSearch);
+    searchModeSelect.addEventListener('change', triggerSearch);
+    modeButtons.forEach((button) => button.addEventListener('click', async () => {
+      modeButtons.forEach((b) => b.classList.remove('active'));
+      button.classList.add('active');
+      currentMode = button.dataset.mode;
+      currentPage = 1;
+      await loadPage(1);
+    }));
+    pagination.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-page]');
+      if (!btn) return;
+      await loadPage(Number(btn.dataset.page));
+    });
+    document.getElementById('backToList').addEventListener('click', (e) => {
+      e.preventDefault();
+      currentPage = 1;
+      currentMode = 'all';
+      currentQuery = '';
+      input.value = '';
+      modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === 'all'));
+      showList();
+      loadPage(1);
+    });
+
+    (async () => {
+      try {
+        modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === currentMode));
+        input.value = currentQuery;
+        if (noFromPath) {
+          showArticle();
+          await openPost(noFromPath, pageParam);
+          return;
+        }
+        showList();
+        await loadPage(pageParam);
+      } catch (err) {
+        postList.innerHTML = `<tr><td colspan="6">불러오기 실패: ${String(err.message || err)}</td></tr>`;
+        syncCount(0);
+      }
+    })();
+    async function updateStorageStats() {
+      try {
+        const r = await fetch('/api/stats');
+        if (!r.ok) return;
+        const data = await r.json();
+        const s = data.storage;
+        document.getElementById('storageStats').innerHTML = `
+          📦 전체 용량: <strong>${s.total}</strong> | 
+          📈 최근 24시간: <span style="color:var(--accent)">+${s.lastDay}</span> | 
+          📅 한 달 예상: <strong>${s.estimatedMonth}</strong>
+        `;
+      } catch (e) {}
+    }
+    updateStorageStats();
+    setInterval(updateStorageStats, 1000 * 60 * 10);
+  </script>
+</body>
+
+</html>

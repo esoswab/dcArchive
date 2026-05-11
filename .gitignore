@@ -1,0 +1,12 @@
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+media-cache/
+*.log
+*.pid
+.env
+archive-cache.json*
+watch-list.tmp
+실패/
+legacy/
