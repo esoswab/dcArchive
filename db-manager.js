@@ -234,9 +234,11 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
   } else if (mode === "deleted") {
     where += " AND p.deleted = 1";
   } else if (mode === "normal") {
-    where += " AND p.deleted = 0";
+    where += " AND p.type = 'normal' AND p.deleted = 0"; // 진짜 일반글만: best/notice 제외
   } else if (mode === "notice") {
     where += " AND p.type = 'notice'";
+  } else if (mode === "all") {
+    where += " AND p.deleted = 0"; // 전체보기에서만 모든 유형 포함
   }
 
   // 2. 하이브리드 검색 로직

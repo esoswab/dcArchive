@@ -42,6 +42,9 @@ pm2 restart dc
 | `pm2 stop dc` | 서버 잠시 멈춤 |
 | `pm2 start dc` | 멈춘 서버 다시 시작 |
 
+*   **상태 확인**: `pm2 status`, `pm2 logs dc`
+*   **DB 완전 초기화**: `pm2 stop dc` -> `rm -f archive.db* archive-cache.json` -> `pm2 start dc`
+
 ---
 
 ### 4. 주의 사항 및 팁
