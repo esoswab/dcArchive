@@ -826,7 +826,9 @@ async function processItem(item, referer = SOURCE + '/') {
 
     const merged = Object.assign({}, prev || {}, post, {
       archivedAt: (prev && prev.archivedAt) || Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      // 갱신 시 type이 날아가지 않도록: 원본 type을 취선 보존
+      type: (post.type || (prev && prev.type) || 'normal')
     });
 
     // 이미지 로컬 캐싱 및 HTML 내 경로 치환
