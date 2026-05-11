@@ -852,19 +852,16 @@ async function processItem(item, referer = SOURCE + '/') {
       const localImages = (prev && prev.localImages) || [];
       const cached = [];
 
-      // 이미지가 새로 수집되는 경우 혹은 기존에 이미지가 없는 경우만 캐싱 수행
-      if (localImages.length === 0) {
-        for (const img of post.images) {
-          try {
-            const localPath = await cacheImage(img, item.href);
-            if (localPath) cached.push(localPath);
-            else cached.push("");
-          } catch (e) { cached.push(""); }
-        }
-        merged.localImages = cached;
-      } else {
-        cached.push(...localImages);
+      // [수정] 이미지가 있더라도 항상 최신 목록(post.images)을 기준으로 캐싱을 시도합니다.
+      // cacheImage 내부에서 파일 존재 여부를 체크하므로 중복 다운로드 걱정은 없습니다.
+      for (const img of post.images) {
+        try {
+          const localPath = await cacheImage(img, item.href);
+          if (localPath) cached.push(localPath);
+          else cached.push("");
+        } catch (e) { cached.push(""); }
       }
+      merged.localImages = cached;
 
       // HTML 내의 원본 이미지 주소를 로컬 주소로 치환
       post.images.forEach((img, idx) => {
