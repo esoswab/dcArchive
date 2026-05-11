@@ -403,17 +403,20 @@ function parseList(html) {
       if (timePart) date = timePart[0];
     }
     const views = decodeEntities(stripTags(countCell)).replace(/,/g, "").trim() || "0";
-    const likes = decodeEntities(stripTags(recommendCell || b.match(/class="gall_recommend"[^>]*>([\s\S]*?)<\/td>/i))).replace(/,/g, "").trim() || "0";
+    const recommendVal = decodeEntities(stripTags(recommendCell || "")).replace(/,/g, "").trim() || "0";
 
-    const isNotice = /icon_notice|notice/i.test(b);
-    const isBest = /class="[^"]*(?:icon_recomimg|icon_best|gall_best)[^"]*"/i.test(b);
+    // 6. 타입 및 카테고리 정밀 판별
+    const noCell = getCell("gall_num");
+    const isNotice = noCell.includes("공지") || /icon_notice|notice/i.test(b);
+    const isBest = /icon_recomimg|icon_best|gall_best/i.test(b) || (parseInt(recommendVal) >= 10);
+    const category = decodeEntities(stripTags(getCell("gall_subject") || "일반")).trim();
 
     rows.push({
       no, type: isNotice ? "notice" : isBest ? "best" : "normal",
-      deleted: false, category: "일반",
+      deleted: false, category: category || "일반",
       title: title || "제목 없음", author: author || "ㅇㅇ",
       authorIcon,
-      commentCount, date, views, likes,
+      commentCount, date, views, likes: recommendVal,
       href: urlLib.resolve(SOURCE, href),
     });
   }
