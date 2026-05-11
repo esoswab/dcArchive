@@ -354,8 +354,10 @@ function parseList(html) {
     const noFromUrl = titM[2];
     const href = titM[1];
     
-    // [보안 강화] 번호 칸(gall_num)의 숫자와 URL의 번호가 일치하는지 이중 확인
     const noCell = getCell("gall_num");
+    const isNotice = noCell.includes("공지") || /icon_notice|notice/i.test(b);
+    
+    // [보안 강화] 번호 칸(gall_num)의 숫자와 URL의 번호가 일치하는지 이중 확인
     const noFromCell = noCell.trim();
     const isNumericNo = /^\d+$/.test(noFromCell);
     
@@ -416,8 +418,6 @@ function parseList(html) {
     const recommendVal = decodeEntities(stripTags(recommendCell || "")).replace(/,/g, "").trim() || "0";
 
     // 6. 타입 및 카테고리 정밀 판별
-    const noCell = getCell("gall_num");
-    const isNotice = noCell.includes("공지") || /icon_notice|notice/i.test(b);
     const isBest = /icon_recomimg|icon_best|gall_best/i.test(b) || (parseInt(recommendVal) >= 10);
     const category = decodeEntities(stripTags(getCell("gall_subject") || "일반")).trim();
 
