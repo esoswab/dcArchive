@@ -408,12 +408,6 @@ function parseList(html) {
 
     // 5. 기타 메타데이터
     let date = decodeEntities(stripTags(dateCell)).trim();
-    // 오늘 날짜면 시간만 표시 (선택사항, 원본 사이트 느낌)
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
-    if (date.includes(todayStr)) {
-      const timePart = date.match(/\d{2}:\d{2}/);
-      if (timePart) date = timePart[0];
-    }
     const views = decodeEntities(stripTags(countCell)).replace(/,/g, "").trim() || "0";
     const recommendVal = decodeEntities(stripTags(recommendCell || "")).replace(/,/g, "").trim() || "0";
 
