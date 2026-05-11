@@ -316,11 +316,20 @@ async function postJson(url, body, extraHeaders = {}, retries = 3) {
 // ── 파서 ───────────────────────────────────────────────────
 function firstMatch(html, res) { for (const re of res) { const m = html.match(re); if (m) return m[1]; } return ""; }
 function extractImageUrls(html, baseUrl) {
-  const urls = []; const re = /<img[^>]*src="([^"]+)"/gi; let m;
+  const urls = new Set();
+  // src, data-original, data-src 속성을 모두 탐색합니다.
+  const re = /<img[^>]*(?:src|data-original|data-src)="([^"]+)"/gi;
+  let m;
   while ((m = re.exec(html))) {
-    const u = m[1]; if (u.indexOf("dcimg") >= 0 || u.indexOf("dcinside.com/viewimage.php") >= 0) urls.push(u.startsWith("http") ? u : urlLib.resolve(baseUrl, u));
+    const u = m[1];
+    // 로딩용 임시 이미지는 건너뜁니다.
+    if (u.includes("gallview_loading_ori.gif")) continue;
+
+    if (u.indexOf("dcimg") >= 0 || u.indexOf("dcinside.com/viewimage.php") >= 0) {
+      urls.add(u.startsWith("http") ? u : urlLib.resolve(baseUrl, u));
+    }
   }
-  return urls;
+  return Array.from(urls);
 }
 
 function parseList(html) {
