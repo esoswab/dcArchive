@@ -152,34 +152,39 @@ async function init() {
   console.log('[DB] Database initialized (FTS5 Trigram Engine Ready)');
 }
 
-const insertPostStmt = db.prepare(`
-  INSERT INTO posts (
-    no, type, deleted, category, title, author, authorIcon, 
-    commentCount, date, views, likes, href, archivedAt, updatedAt, 
-    rawText, contentHtml, eSnO, boardType, gallType
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(no) DO UPDATE SET
-    type        = CASE WHEN excluded.type = 'best' THEN 'best' ELSE excluded.type END,
-    deleted     = excluded.deleted,
-    title       = excluded.title,
-    author      = excluded.author,
-    authorIcon  = excluded.authorIcon,
-    commentCount= excluded.commentCount,
-    date        = excluded.date,
-    views       = excluded.views,
-    likes       = excluded.likes,
-    updatedAt   = excluded.updatedAt,
-    rawText     = CASE WHEN excluded.rawText != '' THEN excluded.rawText ELSE posts.rawText END,
-    contentHtml = CASE WHEN excluded.contentHtml != '' THEN excluded.contentHtml ELSE posts.contentHtml END,
-    eSnO        = excluded.eSnO,
-    boardType   = excluded.boardType,
-    gallType    = excluded.gallType
-`);
+let insertPostStmt, insertCommentStmt, insertImageStmt;
 
-const insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth) VALUES (?, ?, ?, ?, ?)`);
-const insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path) VALUES (?, ?)`);
+function prepareStatements() {
+  if (insertPostStmt) return;
+  insertPostStmt = db.prepare(`
+    INSERT INTO posts (
+      no, type, deleted, category, title, author, authorIcon, 
+      commentCount, date, views, likes, href, archivedAt, updatedAt, 
+      rawText, contentHtml, eSnO, boardType, gallType
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(no) DO UPDATE SET
+      type        = CASE WHEN excluded.type = 'best' THEN 'best' ELSE excluded.type END,
+      deleted     = excluded.deleted,
+      title       = excluded.title,
+      author      = excluded.author,
+      authorIcon  = excluded.authorIcon,
+      commentCount= excluded.commentCount,
+      date        = excluded.date,
+      views       = excluded.views,
+      likes       = excluded.likes,
+      updatedAt   = excluded.updatedAt,
+      rawText     = CASE WHEN excluded.rawText != '' THEN excluded.rawText ELSE posts.rawText END,
+      contentHtml = CASE WHEN excluded.contentHtml != '' THEN excluded.contentHtml ELSE posts.contentHtml END,
+      eSnO        = excluded.eSnO,
+      boardType   = excluded.boardType,
+      gallType    = excluded.gallType
+  `);
+  insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth) VALUES (?, ?, ?, ?, ?)`);
+  insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path) VALUES (?, ?)`);
+}
 
 async function savePost(post) {
+  prepareStatements();
   const transaction = db.transaction((p) => {
     insertPostStmt.run(
       p.no, p.type, p.deleted ? 1 : 0, p.category || '일반',
