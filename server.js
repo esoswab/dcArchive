@@ -351,8 +351,17 @@ function parseList(html) {
     const titM = titCell.match(/href="([^"]+id=vr[^"]+no=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
     if (!titM) continue;
 
-    const no = titM[2];
+    const noFromUrl = titM[2];
     const href = titM[1];
+    
+    // [보안 강화] 번호 칸(gall_num)의 숫자와 URL의 번호가 일치하는지 이중 확인
+    const noFromCell = noCell.trim();
+    const isNumericNo = /^\d+$/.test(noFromCell);
+    
+    // 번호가 일치하지 않거나 숫자가 아니면 (공지 제외) 무시
+    if (!isNotice && (!isNumericNo || noFromCell !== noFromUrl)) continue;
+    
+    const no = isNotice ? noFromUrl : noFromCell;
     if (!no || rows.find(r => r.no === no)) continue;
 
     let title = decodeEntities(stripTags(titM[3].replace(/<span[^>]*class="reply_num"[^>]*>[\s\S]*?<\/span>/gi, ""))).trim();
@@ -825,10 +834,11 @@ async function processItem(item, referer = SOURCE + '/') {
     post.comments = await fetchComments(no, item.page || 1, post, (prev && prev.comments) || []);
 
     const merged = Object.assign({}, prev || {}, post, {
+      no: no, // [중요] 목록에서 가져온 진짜 번호를 절대적으로 유지
       archivedAt: (prev && prev.archivedAt) || Date.now(),
       updatedAt: Date.now(),
-      // 갱신 시 type이 날아가지 않도록: 원본 type을 취선 보존
-      type: (post.type || (prev && prev.type) || 'normal')
+      // 갱신 시 type이 날아가지 않도록: 목록에서 가져온 type(item.type)을 우선 고려
+      type: (post.type || item.type || (prev && prev.type) || 'normal')
     });
 
     // 이미지 로컬 캐싱 및 HTML 내 경로 치환
