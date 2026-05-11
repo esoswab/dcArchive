@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VRChat 마이너 갤러리 저장소</title>
+  <title id="mainTitle">이미지 아카이브</title>
   <style>
     :root {
       --bg: #f3f4f6;
@@ -446,8 +446,7 @@
   <div class="wrap">
     <section class="board" id="boardView">
       <div class="head">
-        <div class="titlebox"><a href="/" style="text-decoration:none;color:inherit"><strong>VRChat 마이너 갤러리
-              저장소</strong></a></div>
+        <div class="titlebox"><a href="/" style="text-decoration:none;color:inherit"><strong id="headerTitle">갤러리 저장소</strong></a></div>
         <div class="searchbar">
           <span class="count" id="resultCount">불러오는 중...</span>
           <select id="searchMode" class="btn" style="padding:4px">
@@ -492,7 +491,7 @@
             원본 글 보기
           </a>
         </div>
-        <a class="back" href="/list/vr" id="backToList">목록으로 돌아가기</a>
+        <a class="back" href="#" id="backToList">목록으로 돌아가기</a>
       </div>
       <div class="article-shell">
         <h2 class="article-title" id="postTitle">글을 선택하세요</h2>
@@ -514,18 +513,45 @@
     </section>
 
     <div class="footer">
-      <div>mgall 스타일 VRChat 백업 저장소</div>
+      <div id="footerText">백업 저장소</div>
       <div id="storageStats" style="margin-top:8px; font-size:12px; color:var(--text-3); opacity:0.8;">
         저장소 현황 불러오는 중...
       </div>
     </div>
   </div>
   <script>
+    let gallId = "vr";
+    let gallName = "브이알챗";
     const qs = new URLSearchParams(location.search);
     const pageParam = Number(qs.get('page')) || 1;
     const modeParam = qs.get('mode') || 'all';
     const queryParam = qs.get('q') || '';
-    const noFromPath = location.pathname.startsWith('/view/vr/') ? location.pathname.split('/').pop() : '';
+    
+    async function initApp() {
+      try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        gallId = config.gallId;
+        gallName = config.gallName;
+        
+        document.title = `${gallName} 이미지 아카이브`;
+        document.getElementById('headerTitle').textContent = `${gallName} 아카이브`;
+        document.getElementById('footerText').textContent = `${gallName} 스타일 백업 저장소`;
+        document.getElementById('backToList').href = `/list/${gallId}`;
+        
+        const noFromPath = location.pathname.split('/').pop();
+        if (location.pathname.includes('/view/')) {
+          openPost(noFromPath, pageParam);
+        } else {
+          loadPage(pageParam);
+        }
+      } catch(e) {
+        console.error("Config load failed", e);
+        loadPage(pageParam);
+      }
+    }
+    initApp();
+
     const boardView = document.getElementById('boardView');
     const articleView = document.getElementById('articleView');
     const input = document.getElementById('searchInput');
@@ -627,12 +653,16 @@
           <td class="num">${item.num || item.no}</td>
           <td class="cat">${modeBadge(item)}</td>
           <td class="title">
-            <a class="title-link" href="/view/vr/${item.no}?page=${currentPage}&mode=${currentMode}">
+            <a class="title-link" href="/view/${gallId}/${item.no}?page=${currentPage}&mode=${currentMode}">
               ${highlight(item.title || '(제목 없음)', q)}
             </a>
             ${(item.commentCount && item.commentCount !== '0') ? `<span style="color:var(--accent);font-size:12px;margin-left:4px;font-weight:700">[${item.commentCount}]</span>` : ''}
           </td>
-          <td class="author">${highlight(item.author || '', q) + userIcon(item.authorIcon)}</td>
+          <td class="author">
+            ${highlight(item.author || '', q)}
+            ${item.uid ? `<br><small style="opacity:0.5; font-size:10px;">${item.uid}</small>` : ''}
+            ${userIcon(item.authorIcon)}
+          </td>
           <td class="date">${formatDate(item.date)}</td>
           <td class="like">추천 ${item.likes || 0}</td>
         </tr>`;
@@ -682,7 +712,7 @@
       const data = await res.json();
       setPagination(page, data);
       renderList(data.items || []);
-      history.replaceState(null, '', `/list/vr?page=${page}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
+      history.replaceState(null, '', `/list/${gallId}?page=${page}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
     }
     async function openPost(no, page) {
       showArticle();
@@ -694,7 +724,11 @@
       // 삭제 여부와 상관없이 저장된 데이터가 있다면 출력
       postTitle.innerHTML = data.title || '상세 페이지';
       postCategory.textContent = data.category || '-';
-      postAuthor.innerHTML = (data.author || '-') + userIcon(data.authorIcon);
+      postAuthor.innerHTML = `
+        ${data.author || '-'}
+        ${data.uid ? `<small style="opacity:0.6; margin-left:5px;">(${data.uid})</small>` : ''}
+        ${userIcon(data.authorIcon)}
+      `;
       postLikes.textContent = data.likes || '-';
       postComments.textContent = data.commentCount || (data.comments ? data.comments.length : '-');
       postViews.textContent = data.views || '-';

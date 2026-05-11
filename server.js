@@ -12,6 +12,11 @@ const PORT = process.env.PORT || 1557;
 const SOURCE = "https://gall.dcinside.com";
 const NOTIFICATION_URL = process.env.NOTIFICATION_URL;
 
+// [갤러리 설정 프리셋]
+const GALL_ID = process.env.GALL_ID || "vr";
+const GALL_NAME = process.env.GALL_NAME || "브이알챗";
+const GALL_TYPE = process.env.GALL_TYPE || "mgallery"; // 일반갤: board, 마이너갤: mgallery
+
 async function sendAlert(msg) {
   if (!NOTIFICATION_URL) return;
   try {
@@ -357,22 +362,22 @@ function parseList(html) {
 
 
     // 2. 제목 및 링크 추출 (번호 포함)
-    const titM = titCell.match(/href="([^"]+id=vr[^"]+no=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+    const titM = titCell.match(new RegExp(`href="([^"]+id=${GALL_ID}[^"]+no=(\\d+)[^"]*)"`, "i"));
     if (!titM) continue;
 
     const noFromUrl = titM[2];
     const href = titM[1];
-    
+
     const noCell = getCell("gall_num");
     const isNotice = noCell.includes("공지") || /icon_notice|notice/i.test(b);
-    
+
     // [보안 강화] 번호 칸(gall_num)의 숫자와 URL의 번호가 일치하는지 이중 확인
     const noFromCell = noCell.trim();
     const isNumericNo = /^\d+$/.test(noFromCell);
-    
+
     // 번호가 일치하지 않거나 숫자가 아니면 (공지 제외) 무시
     if (!isNotice && (!isNumericNo || noFromCell !== noFromUrl)) continue;
-    
+
     const no = isNotice ? noFromUrl : noFromCell;
     if (!no || rows.find(r => r.no === no)) continue;
 
@@ -389,6 +394,7 @@ function parseList(html) {
     const nickM = b.match(/data-nick="([^"]*)"/i) ||
       writerCell.match(/class="nickname"[^>]*>([\s\S]*?)<\/span>/i);
     const ipM = b.match(/data-ip="([^"]*)"/i) || writerCell.match(/class="ip">([^<]*)<\/span>/i);
+    const uidM = b.match(/data-uid="([^"]*)"/i) || writerCell.match(/data-uid="([^"]*)"/i);
 
     let author = "";
     if (nickM) {
@@ -403,6 +409,8 @@ function parseList(html) {
       const ip = ipM[1].replace(/[()]/g, "").trim();
       if (ip) author += `(${ip})`;
     }
+
+    const uid = uidM ? uidM[1].trim() : "";
 
     // 유저 아이콘 추출 (긴 이름부터 체크하여 오인식 방지: 파딱 > 주딱 > 고닉 > 반고닉)
     let authorIcon = "";
@@ -428,7 +436,7 @@ function parseList(html) {
       no, type: isNotice ? "notice" : isBest ? "best" : "normal",
       deleted: false, category: category || "일반",
       title: title || "제목 없음", author: author || "ㅇㅇ",
-      authorIcon,
+      authorIcon, uid,
       commentCount, date, views, likes: recommendVal,
       href: urlLib.resolve(SOURCE, href),
     });
@@ -455,6 +463,8 @@ function parsePost(html, url) {
   const writerSection = writerSectionM ? writerSectionM[1] : html;
 
   const ipMatch = writerSection.match(/class="ip">([^<]*)<\/span>/i);
+  const uidMatch = writerSection.match(/data-uid="([^"]*)"/i);
+  let uid = uidMatch ? uidMatch[1].trim() : "";
   if (ipMatch && ipMatch[1] && ipMatch[1].trim()) {
     const ip = ipMatch[1].replace(/[()]/g, "").trim();
     if (ip) author += `(${ip})`;
@@ -502,20 +512,22 @@ function parsePost(html, url) {
   const isValid = (finalTitle !== "상세 페이지" && finalTitle !== "제목 없음") && (rawText.length > 0 || images.length > 0 || bodyH.length > 0);
 
   return {
-    url, title: finalTitle, author, authorIcon, date, views, likes, commentCount,
+    url, title: finalTitle, author, authorIcon, uid, date, views, likes, commentCount,
     rawText, bodyHtml: bodyH, images,
     comments: [], eSnO, boardType, gallType,
     _isValid: isValid
   };
 }
 
-function buildDcUrl(no, page) { return `${SOURCE}/mgallery/board/view/?id=vr&no=${no}&page=${page || 1}`; }
+function buildDcUrl(no, page) {
+  return `${SOURCE}/${GALL_TYPE}/board/view/?id=${GALL_ID}&no=${no}&page=${page || 1}`;
+}
 
 async function fetchComments(no, page, token, prevComments = []) {
   const newComments = []; let cp = 1;
   try {
     while (cp <= 10) {
-      const data = await postJson(`${SOURCE}/board/comment/`, { id: "vr", no, cmt_id: "vr", cmt_no: no, e_s_n_o: token.eSnO || "", comment_page: cp, sort: "R", board_type: token.boardType || "", _GALLTYPE_: token.gallType || "M" }, { referer: buildDcUrl(no, page) });
+      const data = await postJson(`${SOURCE}/board/comment/`, { id: GALL_ID, no, cmt_id: GALL_ID, cmt_no: no, e_s_n_o: token.eSnO || "", comment_page: cp, sort: "R", board_type: token.boardType || "", _GALLTYPE_: token.gallType || "M" }, { referer: buildDcUrl(no, page) });
       if (!data || !data.comments) break;
       const filteredBatch = data.comments
         .map(c => ({ name: c.name || "익명", meta: c.reg_date || "", body: decodeEntities(stripTags(c.memo || "")), depth: Number(c.depth || 0) }))
@@ -652,6 +664,11 @@ async function handleApi(parsed, res) {
     } catch (e) { send(res, 500, e.message); }
     return true;
   }
+  if (parsed.pathname === "/api/config") {
+    send(res, 200, JSON.stringify({ gallId: GALL_ID, gallName: GALL_NAME, gallType: GALL_TYPE }), "application/json");
+    return;
+  }
+
   if (parsed.pathname === "/api/list") {
     const page = parsed.query.page || "1";
     const mode = parsed.query.mode || "all";
@@ -866,15 +883,15 @@ async function processItem(item, referer = SOURCE + '/') {
       post.images.forEach((img, idx) => {
         if (cached[idx]) {
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          
+
           // 해당 진짜 이미지 주소를 어떤 속성으로든(src, data-src 등) 가지고 있는 img 태그를 통째로 찾습니다.
           const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["']${escapedImg}["'][^>]*>`, 'gi');
-          
+
           // 발견된 복잡한 태그를 우리가 만든 아주 깨끗한 img 태그로 통째로 갈아끼웁니다.
           contentHtml = contentHtml.replace(imgTagRe, `<img src="${cached[idx]}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
         }
       });
-      
+
       // 혹시라도 치환되지 않고 남은 로딩용 이미지가 있다면 그제서야 숨깁니다. (태그 자체를 삭제)
       contentHtml = contentHtml.replace(/<img[^>]+src=["'][^"']*gallview_loading_ori\.gif["'][^>]*>/gi, '');
     }
@@ -908,7 +925,7 @@ async function backgroundCrawl(targetPages) {
   isCrawling = true;
   try {
     for (let bp = 1; bp <= 1; bp++) { // 퀵싱크는 1페이지만 빠르게
-      const html = await fetchText(`${SOURCE}/mgallery/board/lists/?id=vr&page=${bp}&exception_mode=recommend`, SOURCE + '/');
+      const html = await fetchText(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=${bp}&exception_mode=recommend`, SOURCE + '/');
       const list = parseList(html);
       for (const item of list.items) {
         const prev = await dbMgr.getPost(item.no);

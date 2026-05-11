@@ -31,11 +31,13 @@ async function init() {
     contentHtml TEXT,
     eSnO TEXT,
     boardType TEXT,
-    gallType TEXT
+    gallType TEXT,
+    uid TEXT
   )`);
 
-  // 기존 테이블에 contentHtml 컬럼이 없는 경우 추가
+  // 기존 테이블에 누락된 컬럼들 추가
   try { db.exec(`ALTER TABLE posts ADD COLUMN contentHtml TEXT`); } catch (e) {}
+  try { db.exec(`ALTER TABLE posts ADD COLUMN uid TEXT`); } catch (e) {}
 
   db.exec(`CREATE TABLE IF NOT EXISTS comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,8 +162,8 @@ function prepareStatements() {
     INSERT INTO posts (
       no, type, deleted, category, title, author, authorIcon, 
       commentCount, date, views, likes, href, archivedAt, updatedAt, 
-      rawText, contentHtml, eSnO, boardType, gallType
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      rawText, contentHtml, eSnO, boardType, gallType, uid
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(no) DO UPDATE SET
       type        = CASE WHEN excluded.type IS NULL THEN posts.type WHEN excluded.type = 'best' THEN 'best' ELSE excluded.type END,
       deleted     = excluded.deleted,
@@ -177,7 +179,8 @@ function prepareStatements() {
       contentHtml = CASE WHEN excluded.contentHtml != '' THEN excluded.contentHtml ELSE posts.contentHtml END,
       eSnO        = excluded.eSnO,
       boardType   = excluded.boardType,
-      gallType    = excluded.gallType
+      gallType    = excluded.gallType,
+      uid         = excluded.uid
   `);
   insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth) VALUES (?, ?, ?, ?, ?)`);
   insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path) VALUES (?, ?)`);
@@ -191,7 +194,7 @@ async function savePost(post) {
       p.title, p.author, p.authorIcon || '',
       p.commentCount || 0, p.date, p.views || 0, p.likes || 0,
       p.href, p.archivedAt || Date.now(), p.updatedAt || Date.now(),
-      p.rawText || '', p.contentHtml || '', p.eSnO || '', p.boardType || '', p.gallType || ''
+      p.rawText || '', p.contentHtml || '', p.eSnO || '', p.boardType || '', p.gallType || '', p.uid || ''
     );
 
     if (p.comments && Array.isArray(p.comments)) {
