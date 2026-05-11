@@ -328,11 +328,11 @@ function parseList(html) {
   while ((pm = pageRe.exec(html))) { const p = parseInt(pm[1]); if (pages.indexOf(p) === -1) pages.push(p); }
   pages.sort((a, b) => a - b);
 
-  // 특정 tbody에 국한되지 않고 전체 HTML에서 모든 행(tr)을 추출
-  const trs = html.split(/<tr[^>]*>/i);
+  // 1. 진짜 게시글(ub-content 클래스가 있는 tr)만 정확하게 추출
+  const trs = html.match(/<tr[^>]*ub-content[\s\S]*?<\/tr>/gi) || [];
 
-  for (let i = 1; i < trs.length; i++) {
-    const b = trs[i].split(/<\/tr>/i)[0]; if (!b) continue;
+  for (let i = 0; i < trs.length; i++) {
+    const b = trs[i];
 
     // 칸별 정밀 추출 함수
     const getCell = (cls) => {
@@ -346,8 +346,6 @@ function parseList(html) {
     const countCell = getCell("gall_count");
     const recommendCell = getCell("gall_recommend");
 
-    // 1. 진짜 게시글인지 확인 (ub-content 클래스가 있어야 함)
-    if (!trs[i].toLowerCase().includes("ub-content")) continue;
 
     // 2. 제목 및 링크 추출 (번호 포함)
     const titM = titCell.match(/href="([^"]+id=vr[^"]+no=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
