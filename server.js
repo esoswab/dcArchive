@@ -346,16 +346,16 @@ function parseList(html) {
     const countCell = getCell("gall_count");
     const recommendCell = getCell("gall_recommend");
 
-    // 1. 번호 추출
-    const noMatch = b.match(/data-no="(\d+)"/i) || b.match(/class="gall_num"[^>]*>(\d+)<\/td>/i);
-    const no = noMatch ? noMatch[1] : "";
+    // 1 & 2. 제목 및 링크 추출 (번호 포함)
+    // 반드시 no=숫자가 포함된 진짜 글 링크에서 번호를 추출하여 정확도를 높입니다.
+    const titM = titCell.match(/href="([^"]+id=vr[^"]+no=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titM) continue;
+
+    const no = titM[2];
+    const href = titM[1];
     if (!no || rows.find(r => r.no === no)) continue;
 
-    // 2. 제목 및 링크 추출 (반드시 no=숫자 가 포함된 진짜 글 링크만 찾음)
-    const titM = titCell.match(/href="([^"]+id=vr[^"]+no=\d+[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
-    if (!titM) continue;
-    const href = titM[1];
-    let title = decodeEntities(stripTags(titM[2].replace(/<span[^>]*class="reply_num"[^>]*>[\s\S]*?<\/span>/gi, ""))).trim();
+    let title = decodeEntities(stripTags(titM[3].replace(/<span[^>]*class="reply_num"[^>]*>[\s\S]*?<\/span>/gi, ""))).trim();
     if (title.length > 100) title = title.split("\n")[0].substring(0, 100).trim();
 
     // 3. 댓글 수 추출 (태그 내부 혹은 [숫자] 형태 모두 지원)
