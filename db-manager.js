@@ -163,7 +163,7 @@ function prepareStatements() {
       rawText, contentHtml, eSnO, boardType, gallType
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(no) DO UPDATE SET
-      type        = CASE WHEN excluded.type = 'best' THEN 'best' ELSE excluded.type END,
+      type        = CASE WHEN excluded.type IS NULL THEN posts.type WHEN excluded.type = 'best' THEN 'best' ELSE excluded.type END,
       deleted     = excluded.deleted,
       title       = excluded.title,
       author      = excluded.author,
@@ -187,7 +187,7 @@ async function savePost(post) {
   prepareStatements();
   const transaction = db.transaction((p) => {
     insertPostStmt.run(
-      p.no, p.type, p.deleted ? 1 : 0, p.category || '일반',
+      p.no, p.type || 'normal', p.deleted ? 1 : 0, p.category || '일반',
       p.title, p.author, p.authorIcon || '',
       p.commentCount || 0, p.date, p.views || 0, p.likes || 0,
       p.href, p.archivedAt || Date.now(), p.updatedAt || Date.now(),
