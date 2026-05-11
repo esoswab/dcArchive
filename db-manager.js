@@ -265,6 +265,9 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
         // 전체 검색 (글 + 댓글)
         where += " AND (p.title LIKE ? OR p.author LIKE ? OR p.rawText LIKE ? OR p.no IN (SELECT postNo FROM comments WHERE name LIKE ? OR body LIKE ?))";
         whereParams.push(likeQ, likeQ, likeQ, likeQ, likeQ);
+      } else if (sm === "uid") {
+        where += " AND p.uid LIKE ?";
+        whereParams.push(likeQ);
       } else {
         // 기본값: 제목+본문 (title_body)
         where += " AND (p.title LIKE ? OR p.author LIKE ? OR p.rawText LIKE ?)";
@@ -294,6 +297,9 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
       } else if (sm === "comment") {
         where += " AND p.no IN (SELECT postNo FROM comments WHERE id IN (SELECT rowid FROM comments_fts WHERE comments_fts MATCH ?))";
         whereParams.push(ftsQ);
+      } else if (sm === "uid") {
+        where += " AND p.uid LIKE ?";
+        whereParams.push(`%${q}%`);
       } else if (sm === "total") {
         where += ` AND (
           p.no IN (SELECT rowid FROM posts_fts WHERE posts_fts MATCH ?) 

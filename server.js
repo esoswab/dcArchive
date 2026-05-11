@@ -678,7 +678,7 @@ async function handleApi(parsed, res) {
     try {
       // 1페이지일 때는 실시간 동기화 병행
       if (page === "1" && !q && mode === "all") {
-        const html = await fetchText(`${SOURCE}/mgallery/board/lists/?id=vr&page=1`, SOURCE + '/');
+        const html = await fetchText(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`, SOURCE + '/');
         const list = parseList(html);
         await mergeCacheFromList(1, list);
       }
