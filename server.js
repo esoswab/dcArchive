@@ -853,7 +853,6 @@ async function processItem(item, referer = SOURCE + '/') {
       const cached = [];
 
       // [수정] 이미지가 있더라도 항상 최신 목록(post.images)을 기준으로 캐싱을 시도합니다.
-      // cacheImage 내부에서 파일 존재 여부를 체크하므로 중복 다운로드 걱정은 없습니다.
       for (const img of post.images) {
         try {
           const localPath = await cacheImage(img, item.href);
@@ -863,25 +862,17 @@ async function processItem(item, referer = SOURCE + '/') {
       }
       merged.localImages = cached;
 
-    // [강력 수정] HTML 내의 이미지를 로컬 캐시 주소로 완벽하게 치환합니다.
-    // 기존의 src, data-src, data-original 등을 모두 제거하고 로컬 주소만 남깁니다.
-    if (post.images && post.images.length > 0) {
+      // [강력 수정] HTML 내의 이미지를 로컬 캐시 주소로 완벽하게 치환합니다.
       post.images.forEach((img, idx) => {
         if (cached[idx]) {
-          // 1. 해당 이미지 URL을 포함하는 img 태그를 찾아서 src를 로컬 주소로 강제 치환
-          // 2. data-original 등 지연 로딩 속성들도 제거하거나 로컬 주소로 통일
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          
-          // 정규표현식 설명: img 태그 내에서 src나 data-... 속성에 해당 URL이 들어있는 경우를 찾아 src를 로컬 주소로 바꿈
           const imgTagRe = new RegExp(`(<img[^>]+(?:src|data-original|data-src)=["'])${escapedImg}(["'][^>]*>)`, 'gi');
           contentHtml = contentHtml.replace(imgTagRe, `$1${cached[idx]}$2`);
-          
-          // 덤으로 혹시 모를 잔재들(속성명들)도 깨끗하게 정리 (src="로컬" 하나만 남도록 유도)
           contentHtml = contentHtml.replace(new RegExp(`data-(?:original|src)=["']${escapedImg}["']`, 'gi'), '');
         }
       });
       
-      // 마지막으로 모든 img 태그 내의 loading.gif를 가진 src가 있다면 제거 (또는 로컬 이미지로 덮어씌워짐)
+      // 로딩 GIF 제거
       contentHtml = contentHtml.replace(/src=["'][^"']*gallview_loading_ori\.gif["']/gi, 'style="display:none"');
     }
 
