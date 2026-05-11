@@ -866,14 +866,17 @@ async function processItem(item, referer = SOURCE + '/') {
       post.images.forEach((img, idx) => {
         if (cached[idx]) {
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const imgTagRe = new RegExp(`(<img[^>]+(?:src|data-original|data-src)=["'])${escapedImg}(["'][^>]*>)`, 'gi');
-          contentHtml = contentHtml.replace(imgTagRe, `$1${cached[idx]}$2`);
-          contentHtml = contentHtml.replace(new RegExp(`data-(?:original|src)=["']${escapedImg}["']`, 'gi'), '');
+          
+          // 해당 진짜 이미지 주소를 어떤 속성으로든(src, data-src 등) 가지고 있는 img 태그를 통째로 찾습니다.
+          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["']${escapedImg}["'][^>]*>`, 'gi');
+          
+          // 발견된 복잡한 태그를 우리가 만든 아주 깨끗한 img 태그로 통째로 갈아끼웁니다.
+          contentHtml = contentHtml.replace(imgTagRe, `<img src="${cached[idx]}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
         }
       });
       
-      // 로딩 GIF 제거
-      contentHtml = contentHtml.replace(/src=["'][^"']*gallview_loading_ori\.gif["']/gi, 'style="display:none"');
+      // 혹시라도 치환되지 않고 남은 로딩용 이미지가 있다면 그제서야 숨깁니다. (태그 자체를 삭제)
+      contentHtml = contentHtml.replace(/<img[^>]+src=["'][^"']*gallview_loading_ori\.gif["'][^>]*>/gi, '');
     }
 
     merged.contentHtml = contentHtml;
