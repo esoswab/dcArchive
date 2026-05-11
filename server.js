@@ -346,8 +346,10 @@ function parseList(html) {
     const countCell = getCell("gall_count");
     const recommendCell = getCell("gall_recommend");
 
-    // 1 & 2. 제목 및 링크 추출 (번호 포함)
-    // 반드시 no=숫자가 포함된 진짜 글 링크에서 번호를 추출하여 정확도를 높입니다.
+    // 1. 진짜 게시글인지 확인 (ub-content 클래스가 있어야 함)
+    if (!trs[i].toLowerCase().includes("ub-content")) continue;
+
+    // 2. 제목 및 링크 추출 (번호 포함)
     const titM = titCell.match(/href="([^"]+id=vr[^"]+no=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
     if (!titM) continue;
 
