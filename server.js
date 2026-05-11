@@ -362,7 +362,7 @@ function parseList(html) {
 
 
     // 2. 제목 및 링크 추출 (번호 포함)
-    const titM = titCell.match(new RegExp(`href="([^"]+id=${GALL_ID}[^"]+no=(\\d+)[^"]*)"`, "i"));
+    const titM = titCell.match(new RegExp(`href="([^"]+id=${GALL_ID}[^"]+no=(\\d+)[^"]*)"[^>]*>([\\s\\S]*?)<\\/a>`, "i"));
     if (!titM) continue;
 
     const noFromUrl = titM[2];
