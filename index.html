@@ -413,17 +413,31 @@
       border-radius: 2px
     }
 
-    @media (max-width:860px) {
-
-      .author,
-      .date,
-      .like {
-        display: none
-      }
-
-      .num {
-        width: 72px
-      }
+    @media (max-width: 768px) {
+      .wrap { padding: 10px 0 20px; }
+      .board, .article { border-radius: 0; border-left: none; border-right: none; }
+      .head { padding: 12px; }
+      .titlebox strong { font-size: 16px; }
+      
+      /* 모바일에서 불필요한 열 숨기기 */
+      .num, .date, .like { display: none; }
+      .cat { width: 50px; font-size: 11px; }
+      
+      /* 테이블 행 디자인 조정 (더 넓은 제목 공간) */
+      tbody td { padding: 14px 10px; }
+      .title-link { font-size: 15px; display: block; line-height: 1.4; margin-bottom: 4px; }
+      .author { width: auto; font-size: 12px; color: var(--muted); }
+      
+      .pagination { gap: 4px; padding: 10px; }
+      .page { padding: 6px 10px; font-size: 12px; }
+      
+      .article-shell { padding: 15px; }
+      .article-title { font-size: 20px; margin-bottom: 12px; }
+      .article-meta { padding: 12px; font-size: 12px; gap: 8px 12px; background: rgba(255,255,255,0.03); }
+      
+      .comment { grid-template-columns: 1fr; gap: 4px; padding: 12px; }
+      .comment .name { font-size: 13px; font-weight: 600; }
+      .comment p { font-size: 13px; line-height: 1.5; }
     }
   </style>
 </head>
@@ -603,7 +617,7 @@
           </td>
           <td class="author">${highlight(item.author || '', q) + userIcon(item.authorIcon)}</td>
           <td class="date">${item.date || ''}</td>
-          <td class="like">${item.likes || 0}</td>
+          <td class="like">추천 ${item.likes || 0}</td>
         </tr>`;
 
         if (item.matchedComments && item.matchedComments.length) {
