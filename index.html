@@ -541,8 +541,10 @@
         
         const noFromPath = location.pathname.split('/').pop();
         if (location.pathname.includes('/view/')) {
+          showArticle();
           openPost(noFromPath, pageParam);
         } else {
+          showList();
           loadPage(pageParam);
         }
       } catch(e) {
@@ -801,7 +803,7 @@
         };
       }
       renderComments(data.comments || []);
-      history.replaceState(null, '', `/view/vr/${no}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
+      history.replaceState(null, '', `/view/${gallId}/${no}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
     }
 
     let searchTimer = null;
@@ -838,22 +840,6 @@
       loadPage(1);
     });
 
-    (async () => {
-      try {
-        modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === currentMode));
-        input.value = currentQuery;
-        if (noFromPath) {
-          showArticle();
-          await openPost(noFromPath, pageParam);
-          return;
-        }
-        showList();
-        await loadPage(pageParam);
-      } catch (err) {
-        postList.innerHTML = `<tr><td colspan="6">불러오기 실패: ${String(err.message || err)}</td></tr>`;
-        syncCount(0);
-      }
-    })();
     async function updateStorageStats() {
       try {
         const r = await fetch('/api/stats');
