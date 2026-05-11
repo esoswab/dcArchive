@@ -473,6 +473,10 @@
           <strong>글 상세</strong>
           <button id="btnRefresh" class="btn" style="margin-left:10px; padding:4px 8px; font-size:11px; vertical-align:middle;">수동 갱신</button>
           <button id="btnWatch" class="btn" style="margin-left:5px; padding:4px 8px; font-size:11px; vertical-align:middle;">⭐ 감시 추가</button>
+          <a id="btnOriginal" class="btn" target="_blank" rel="noreferrer" style="margin-left:5px; padding:4px 8px; font-size:11px; vertical-align:middle; display:inline-flex; align-items:center; gap:4px; text-decoration:none; color:inherit;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            원본 글 보기
+          </a>
         </div>
         <a class="back" href="/list/vr" id="backToList">목록으로 돌아가기</a>
       </div>
@@ -664,6 +668,15 @@
       postComments.textContent = data.commentCount || (data.comments ? data.comments.length : '-');
       postViews.textContent = data.views || '-';
       articleDate.textContent = data.date || '-';
+
+      // 원본 링크 설정
+      const btnOriginal = document.getElementById('btnOriginal');
+      if (btnOriginal && data.href) {
+        btnOriginal.href = data.href;
+        btnOriginal.style.display = 'inline-flex';
+      } else if (btnOriginal) {
+        btnOriginal.style.display = 'none';
+      }
 
       // 본문 출력 (보존된 HTML이 있으면 우선 사용)
       if (data.contentHtml && data.contentHtml.trim()) {
