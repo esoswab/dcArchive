@@ -268,10 +268,16 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
       } else if (sm === "uid") {
         where += " AND p.uid LIKE ?";
         whereParams.push(likeQ);
+      } else if (sm === "title") {
+        where += " AND p.title LIKE ?";
+        whereParams.push(likeQ);
+      } else if (sm === "body") {
+        where += " AND p.rawText LIKE ?";
+        whereParams.push(likeQ);
       } else {
         // 기본값: 제목+본문 (title_body)
-        where += " AND (p.title LIKE ? OR p.author LIKE ? OR p.rawText LIKE ?)";
-        whereParams.push(likeQ, likeQ, likeQ);
+        where += " AND (p.title LIKE ? OR p.rawText LIKE ?)";
+        whereParams.push(likeQ, likeQ);
       }
 
       if (sm === "comment" || sm === "total") {
@@ -307,13 +313,16 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
           OR p.author LIKE ?
         )`;
         whereParams.push(ftsQ, ftsQ, `%${q}%`);
+      } else if (sm === "title") {
+        where += " AND p.no IN (SELECT rowid FROM posts_fts WHERE title MATCH ?)";
+        whereParams.push(ftsQ);
+      } else if (sm === "body") {
+        where += " AND p.no IN (SELECT rowid FROM posts_fts WHERE rawText MATCH ?)";
+        whereParams.push(ftsQ);
       } else {
         // 기본값: 제목+본문 (title_body)
-        where += ` AND (
-          p.no IN (SELECT rowid FROM posts_fts WHERE posts_fts MATCH ?) 
-          OR p.author LIKE ?
-        )`;
-        whereParams.push(ftsQ, `%${q}%`);
+        where += " AND p.no IN (SELECT rowid FROM posts_fts WHERE posts_fts MATCH ?)";
+        whereParams.push(ftsQ);
       }
 
       if (sm === "comment" || sm === "total") {
