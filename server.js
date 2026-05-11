@@ -355,6 +355,7 @@ function parseList(html) {
     const href = titM[1];
     
     // [보안 강화] 번호 칸(gall_num)의 숫자와 URL의 번호가 일치하는지 이중 확인
+    const noCell = getCell("gall_num");
     const noFromCell = noCell.trim();
     const isNumericNo = /^\d+$/.test(noFromCell);
     
@@ -536,8 +537,10 @@ async function fetchComments(no, page, token, prevComments = []) {
 
   // 시간순 정렬 (meta 기준)
   return merged.sort((a, b) => {
-    const da = new Date(a.meta.replace(/\./g, '/'));
-    const db = new Date(b.meta.replace(/\./g, '/'));
+    const ma = (a.meta || "").replace(/\./g, '/');
+    const mb = (b.meta || "").replace(/\./g, '/');
+    const da = ma ? new Date(ma) : new Date(0);
+    const db = mb ? new Date(mb) : new Date(0);
     return da - db;
   });
 }
