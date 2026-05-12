@@ -712,37 +712,22 @@ async function handleApi(parsed, res) {
   if (parsed.pathname === "/api/post") {
     const no = parsed.query.no;
     try {
-      const prev = await dbMgr.getPost(no);
-      // 만약 DB에 없거나 업데이트가 필요하면 실시간 수집
-      if (!prev || !prev.rawText || (Date.now() - (prev.updatedAt || 0) > 10 * 60 * 1000)) {
+      let post = await dbMgr.getPost(no);
+      // 만약 DB에 없거나 내용이 부실하거나 업데이트가 필요하면 실시간 수집
+      if (!post || !post.rawText || (Date.now() - (post.updatedAt || 0) > 10 * 60 * 1000)) {
         const url = buildDcUrl(no, parsed.query.page);
-        const html = await fetchText(url, SOURCE + '/');
-        const post = parsePost(html, url);
-        post.comments = await fetchComments(no, parsed.query.page, post, (prev && prev.comments) || []);
-
-        let localImages = (prev && prev.localImages) || [];
-        if (post.images && post.images.length > 0 && localImages.length === 0) {
-          const cached = [];
-          for (const img of post.images) {
-            try { 
-              const res = await cacheImage(img, url); 
-              if (res && res.path) cached.push(res); 
-            } catch (e) { }
-          }
-          localImages = cached;
-        }
-
-        const merged = Object.assign({}, prev || {}, post, {
-          archivedAt: (prev && prev.archivedAt) || Date.now(),
-          updatedAt: Date.now(),
-          localImages
-        });
-        await dbMgr.savePost(merged);
-        send(res, 200, JSON.stringify(merged), "application/json");
+        // processItem을 호출하여 수집/변환/저장 로직을 일원화
+        await processItem({ no, href: url, page: parsed.query.page || 1 }, SOURCE + '/');
+        post = await dbMgr.getPost(no);
+      }
+      
+      if (post) {
+        send(res, 200, JSON.stringify(post), "application/json");
       } else {
-        send(res, 200, JSON.stringify(prev), "application/json");
+        send(res, 200, JSON.stringify({ deleted: true }), "application/json");
       }
     } catch (e) {
+      console.error("[ApiPost Error]", e.message);
       const post = await dbMgr.getPost(no);
       send(res, 200, JSON.stringify(post || { deleted: true }), "application/json");
     }
