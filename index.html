@@ -299,6 +299,33 @@
       padding-top: 14px
     }
 
+    .img-container {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }
+
+    .btn-purge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(220, 38, 38, 0.85);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10;
+    }
+
+    .img-container:hover .btn-purge {
+      opacity: 1;
+    }
+
     .comment-wrap h3 {
       margin: 0 0 10px;
       font-size: 17px
@@ -595,7 +622,11 @@
         postImages.innerHTML = '';
         return;
       }
-      postImages.innerHTML = images.map((src) => `<a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="" loading="lazy" decoding="async"></a>`).join('');
+      postImages.innerHTML = images.map((src) => `
+        <div class="img-container">
+          <button class="btn-purge" onclick="purgeImage('${src}')">영구 삭제/차단</button>
+          <a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="" loading="lazy" decoding="async"></a>
+        </div>`).join('');
     }
     function setPagination(page, pages) {
       currentPage = page;
@@ -806,6 +837,29 @@
           refreshBtn.textContent = '수동 갱신';
         };
       }
+      
+      // 본문 내 이미지들에도 삭제 버튼 주입 (contentHtml 처리)
+      if (data.contentHtml) {
+        setTimeout(() => {
+          const imgs = postBody.querySelectorAll('img');
+          imgs.forEach(img => {
+            if (img.src.includes('/media/')) {
+              const container = document.createElement('div');
+              container.className = 'img-container';
+              img.parentNode.insertBefore(container, img);
+              
+              const btn = document.createElement('button');
+              btn.className = 'btn-purge';
+              btn.textContent = '영구 삭제/차단';
+              btn.onclick = (e) => { e.preventDefault(); purgeImage(new URL(img.src).pathname); };
+              
+              container.appendChild(btn);
+              container.appendChild(img);
+            }
+          });
+        }, 100);
+      }
+
       renderComments(data.comments || []);
       if (!skipPush) {
         history.pushState(null, '', `/view/${gallId}/${no}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
@@ -859,6 +913,25 @@
       // 이전에 보던 상태 그대로 유지 (loadPage를 다시 부르지 않아도 이미 렌더링된 상태)
       history.pushState(null, '', `/list/${gallId}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
     });
+
+    async function purgeImage(path) {
+      if (!confirm("이 이미지를 서버에서 완전히 삭제하고 블랙리스트에 등록하시겠습니까?\n이 해시를 가진 모든 게시글의 이미지도 함께 삭제됩니다.")) return;
+      
+      try {
+        const res = await fetch(`/api/purge-image?path=${encodeURIComponent(path)}`);
+        const data = await res.json();
+        if (data.success) {
+          alert(`성공적으로 삭제되었습니다. (삭제된 파일: ${data.deletedCount}개)`);
+          // 현재 페이지 새로고침하여 삭제 결과 반영
+          const no = location.pathname.split('/').pop();
+          await openPost(no, currentPage, true);
+        } else {
+          alert("삭제 실패: " + data.error);
+        }
+      } catch (e) {
+        alert("오류 발생: " + e.message);
+      }
+    }
 
     async function updateStorageStats() {
       try {

@@ -159,7 +159,9 @@ function jitterWait(min, max) {
 async function cacheImage(url, referer) {
   const hash = require('crypto').createHash('md5').update(url).digest('hex');
   const outPath = path.join(MEDIA_DIR, hash + '.webp');
-  if (fs.existsSync(outPath)) return '/media/' + hash + '.webp'; // 이미 캐시됨
+  
+  // 이미 캐시된 경우라도 DB에서 해시 정보를 가져오기 위해 객체 반환 고려 (여기서는 단순화)
+  if (fs.existsSync(outPath)) return { path: '/media/' + hash + '.webp', originalHash: '' }; 
 
   return new Promise((resolve, reject) => {
     const profile = USER_PROFILES[Math.floor(Math.random() * USER_PROFILES.length)];
@@ -177,12 +179,20 @@ async function cacheImage(url, referer) {
       res.on('end', async () => {
         try {
           const buf = Buffer.concat(chunks);
+          const originalHash = crypto.createHash('md5').update(buf).digest('hex');
+          
+          // 블랙리스트 체크
+          if (await dbMgr.isBlacklisted(originalHash)) {
+            console.log(`[Blacklist] 차단된 이미지 감지됨 (Hash: ${originalHash})`);
+            resolve({ path: '', originalHash, isBlocked: true });
+            return;
+          }
+
           const image = sharp(buf);
           const metadata = await image.metadata();
           
           // 움짤(애니메이션) 처리 지원
           const isAnimated = metadata.pages > 1;
-          
           let pipeline = isAnimated ? sharp(buf, { animated: true }) : image;
           
           await pipeline
@@ -190,7 +200,7 @@ async function cacheImage(url, referer) {
             .webp({ quality: 60, animated: isAnimated })
             .toFile(outPath);
             
-          resolve('/media/' + hash + '.webp');
+          resolve({ path: '/media/' + hash + '.webp', originalHash });
         } catch (e) { reject(e); }
       });
       res.on('error', reject);
@@ -714,7 +724,10 @@ async function handleApi(parsed, res) {
         if (post.images && post.images.length > 0 && localImages.length === 0) {
           const cached = [];
           for (const img of post.images) {
-            try { const p = await cacheImage(img, url); if (p) cached.push(p); } catch (e) { }
+            try { 
+              const res = await cacheImage(img, url); 
+              if (res && res.path) cached.push(res); 
+            } catch (e) { }
           }
           localImages = cached;
         }
@@ -736,6 +749,71 @@ async function handleApi(parsed, res) {
     return true;
   }
 
+
+  if (parsed.pathname === "/api/purge-image") {
+    const imgPath = parsed.query.path;
+    if (!imgPath) return send(res, 400, JSON.stringify({ success: false, error: "path is required" }), "application/json");
+
+    try {
+      const info = await dbMgr.db.prepare(`SELECT originalHash FROM images WHERE path = ?`).get(imgPath);
+      if (!info) return send(res, 404, JSON.stringify({ success: false, error: "Image not found in DB" }), "application/json");
+
+      const targetHash = info.originalHash;
+      // 1. 블랙리스트 등록 (재수집 방지)
+      if (targetHash) await dbMgr.blacklistImage(targetHash, "사용자 요청에 의한 말소");
+
+      // 2. 해당 해시를 가진 모든 이미지 정보 가져오기
+      const allOccurrences = targetHash 
+        ? await dbMgr.db.prepare(`SELECT path FROM images WHERE originalHash = ?`).all(targetHash)
+        : [{ path: imgPath }];
+
+      let deletedCount = 0;
+      for (const occurrence of allOccurrences) {
+        const fullPath = path.join(MEDIA_DIR, path.basename(occurrence.path));
+        
+        // 3. 물리적 파일 삭제
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+          deletedCount++;
+        }
+
+        // 4. 모든 게시글 본문에서 해당 이미지 태그 소거
+        const escapedPath = occurrence.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const imgTagRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
+        const replacement = `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">관리자에 의해 영구 삭제된 이미지입니다.</div>`;
+
+        await dbMgr.db.prepare(`
+          UPDATE posts SET contentHtml = REPLACE(contentHtml, (
+            SELECT substr(contentHtml, instr(contentHtml, '<img'), instr(substr(contentHtml, instr(contentHtml, '${occurrence.path}')), '>') + instr(contentHtml, '${occurrence.path}') - instr(contentHtml, '<img'))
+            FROM posts WHERE contentHtml LIKE ? LIMIT 1
+          ), ?)
+          WHERE contentHtml LIKE ?
+        `).run(`%${occurrence.path}%`, replacement, `%${occurrence.path}%`);
+        
+        // 단순 REPLACE는 HTML 구조에 따라 위험할 수 있으므로, 더 안전한 정규식 기반 업데이트가 필요하지만 
+        // SQLite 내부에서 정규식 처리는 어려우므로 fetch -> replace -> save 방식으로 진행
+        const affectedPosts = await dbMgr.query(`SELECT no, contentHtml FROM posts WHERE contentHtml LIKE ?`, [`%${occurrence.path}%`]);
+        for (const p of affectedPosts) {
+          const newHtml = p.contentHtml.replace(imgTagRe, replacement);
+          await dbMgr.run(`UPDATE posts SET contentHtml = ? WHERE no = ?`, [newHtml, p.no]);
+        }
+      }
+
+      // 5. DB에서 이미지 정보 삭제
+      if (targetHash) {
+        await dbMgr.db.prepare(`DELETE FROM images WHERE originalHash = ?`).run(targetHash);
+      } else {
+        await dbMgr.db.prepare(`DELETE FROM images WHERE path = ?`).run(imgPath);
+      }
+
+      console.log(`[Purge] 이미지 ${deletedCount}개 물리적 삭제 및 블랙리스트 등록 완료 (Hash: ${targetHash})`);
+      send(res, 200, JSON.stringify({ success: true, deletedCount, hash: targetHash }), "application/json");
+    } catch (e) {
+      logError(e, "PurgeImage");
+      send(res, 500, JSON.stringify({ success: false, error: e.message }), "application/json");
+    }
+    return true;
+  }
 
   if (parsed.pathname === "/api/image-debug") {
     const no = parsed.query.no;
@@ -882,27 +960,39 @@ async function processItem(item, referer = SOURCE + '/') {
     if (post.images && post.images.length > 0) {
       const localImages = (prev && prev.localImages) || [];
       const cached = [];
+      const hashes = [];
 
       // [수정] 이미지가 있더라도 항상 최신 목록(post.images)을 기준으로 캐싱을 시도합니다.
       for (const img of post.images) {
         try {
-          const localPath = await cacheImage(img, item.href);
-          if (localPath) cached.push(localPath);
-          else cached.push("");
-        } catch (e) { cached.push(""); }
+          const result = await cacheImage(img, item.href);
+          if (result && result.path) {
+            cached.push(result.path);
+            // DB 저장을 위해 해시 정보가 포함된 객체를 별도로 관리하거나 merged에 합침
+            hashes.push(result.originalHash);
+          } else if (result && result.isBlocked) {
+            cached.push("blocked"); // 차단 표시
+            hashes.push(result.originalHash);
+          } else {
+            cached.push("");
+            hashes.push("");
+          }
+        } catch (e) { cached.push(""); hashes.push(""); }
       }
-      merged.localImages = cached;
+      merged.localImages = cached.map((path, idx) => ({ path, originalHash: hashes[idx] }));
 
       // [강력 수정] HTML 내의 이미지를 로컬 캐시 주소로 완벽하게 치환합니다.
       post.images.forEach((img, idx) => {
-        if (cached[idx]) {
+        const localInfo = merged.localImages[idx];
+        if (localInfo && localInfo.path) {
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-          // 해당 진짜 이미지 주소를 어떤 속성으로든(src, data-src 등) 가지고 있는 img 태그를 통째로 찾습니다.
           const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["']${escapedImg}["'][^>]*>`, 'gi');
 
-          // 발견된 복잡한 태그를 우리가 만든 아주 깨끗한 img 태그로 통째로 갈아끼웁니다.
-          contentHtml = contentHtml.replace(imgTagRe, `<img src="${cached[idx]}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
+          if (localInfo.path === "blocked") {
+            contentHtml = contentHtml.replace(imgTagRe, `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`);
+          } else {
+            contentHtml = contentHtml.replace(imgTagRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
+          }
         }
       });
 

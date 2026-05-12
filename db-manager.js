@@ -38,6 +38,7 @@ async function init() {
   // 기존 테이블에 누락된 컬럼들 추가
   try { db.exec(`ALTER TABLE posts ADD COLUMN contentHtml TEXT`); } catch (e) {}
   try { db.exec(`ALTER TABLE posts ADD COLUMN uid TEXT`); } catch (e) {}
+  try { db.exec(`ALTER TABLE images ADD COLUMN originalHash TEXT`); } catch (e) {}
 
   db.exec(`CREATE TABLE IF NOT EXISTS comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,8 +55,15 @@ async function init() {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     postNo INTEGER,
     path TEXT,
+    originalHash TEXT,
     UNIQUE(postNo, path),
     FOREIGN KEY(postNo) REFERENCES posts(no)
+  )`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS blacklisted_images (
+    hash TEXT PRIMARY KEY,
+    reason TEXT,
+    createdAt INTEGER
   )`);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_posts_type     ON posts(type)`);
@@ -183,7 +191,7 @@ function prepareStatements() {
       uid         = CASE WHEN excluded.uid != '' THEN excluded.uid ELSE posts.uid END
   `);
   insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth) VALUES (?, ?, ?, ?, ?)`);
-  insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path) VALUES (?, ?)`);
+  insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path, originalHash) VALUES (?, ?, ?)`);
 }
 
 async function savePost(post) {
@@ -205,7 +213,10 @@ async function savePost(post) {
 
     if (p.localImages && Array.isArray(p.localImages)) {
       for (const img of p.localImages) {
-        insertImageStmt.run(p.no, img);
+        // img가 { path, hash } 객체 형태일 수도 있고 그냥 문자열(경로)일 수도 있음
+        const path = typeof img === 'string' ? img : img.path;
+        const hash = typeof img === 'string' ? '' : img.originalHash;
+        insertImageStmt.run(p.no, path, hash || '');
       }
     }
   });
@@ -397,6 +408,17 @@ const run = async (sql, params = []) => db.prepare(sql).run(params);
 const get = async (sql, params = []) => db.prepare(sql).get(params);
 const query = async (sql, params = []) => db.prepare(sql).all(params);
 
+async function isBlacklisted(hash) {
+  if (!hash) return false;
+  const row = db.prepare(`SELECT 1 FROM blacklisted_images WHERE hash = ?`).get(hash);
+  return !!row;
+}
+
+async function blacklistImage(hash, reason = "혐짤") {
+  db.prepare(`INSERT OR IGNORE INTO blacklisted_images (hash, reason, createdAt) VALUES (?, ?, ?)`).run(hash, reason, Date.now());
+  // 해당 해시를 가진 기존 이미지 파일들을 찾아 삭제하는 로직은 server.js에서 처리하도록 설계
+}
+
 module.exports = {
   init,
   savePost,
@@ -406,5 +428,7 @@ module.exports = {
   query,
   run,
   get,
+  isBlacklisted,
+  blacklistImage,
   db
 };
