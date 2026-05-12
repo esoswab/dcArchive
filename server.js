@@ -1048,7 +1048,7 @@ async function processItem(item, referer = SOURCE + '/') {
   const no = item.no;
   try {
     const html = await fetchText(item.href, referer);
-      if (html.includes("삭제된 게시글입니다") || html.includes("존재하지 않는 게시물입니다") || html.includes("잘못된 접근입니다")) {
+    if (html.includes("삭제된 게시글입니다") || html.includes("존재하지 않는 게시물입니다") || html.includes("잘못된 접근입니다")) {
       const prev = await dbMgr.getPost(no);
       await dbMgr.savePost(Object.assign({}, prev || {}, item, {
         category: '삭제글', deleted: 1, updatedAt: Date.now(), archivedAt: (prev && prev.archivedAt) || Date.now()
@@ -1059,123 +1059,101 @@ async function processItem(item, referer = SOURCE + '/') {
 
     const post = parsePost(html, item.href);
     if (!post._isValid) {
-      console.log(`[Validation Failed] Post no: ${no}, Title: ${post.title}, BodyLen: ${post.rawText.length}, ImgLen: ${post.images.length}`);
+      console.log(`[Validation Failed] Post no: ${no}, Title: ${post.title}`);
       return;
     }
 
-    // 🚨 HTML 레이아웃 보존: 원본 HTML을 정화하고 이미지 경로를 로컬로 치환
     let contentHtml = post.bodyHtml || "";
 
-    // 영상 태그(iframe, embed)를 작은 아이콘 박스로 치환 (디시 서버 부하 및 보안 정책 대응)
-    const videoPlaceholder = `<a href="${item.href}" target="_blank" class="video-placeholder" title="원본 글에서 영상 보기" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:6px 12px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; color:#475467; font-size:12px; margin:8px 0; user-select:none;">
-      <span style="font-size:16px;">📹</span>
-      <strong style="color:#475467;">원본 사이트 영상 (클릭하여 보기)</strong>
-    </a>`;
+    // 영상 태그 치환
+    const videoPlaceholder = `<a href="${item.href}" target="_blank" class="video-placeholder" title="원본 글에서 영상 보기" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:6px 12px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; color:#475467; font-size:12px; margin:8px 0;">
+      <span>📹</span><strong>원본 사이트 영상 (클릭)</strong></a>`;
     contentHtml = contentHtml.replace(/<(?:iframe|embed)[\s\S]*?<\/(?:iframe|embed)>|<(?:iframe|embed)[\s\S]*?>/gi, videoPlaceholder);
 
-    // 불필요한 태그 제거 (스크립트 등)
-    contentHtml = contentHtml.replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/on\w+="[^"]*"/gi, "");
+    // 불필요 태그 제거
+    contentHtml = contentHtml.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/on\w+="[^"]*"/gi, "");
 
     const prev = await dbMgr.getPost(no);
     post.comments = await fetchComments(no, item.page || 1, post, (prev && prev.comments) || []);
 
     const merged = Object.assign({}, prev || {}, post, {
-      no: no, // [중요] 목록에서 가져온 진짜 번호를 절대적으로 유지
-      uid: post.uid || (prev && prev.uid) || (item && item.uid) || "", // UID 보존 (목록/상세 어디서든 하나라도 찾으면 유지)
+      no: no,
+      uid: post.uid || (prev && prev.uid) || (item && item.uid) || "",
       archivedAt: (prev && prev.archivedAt) || Date.now(),
       updatedAt: Date.now(),
-      // 갱신 시 type이 날아가지 않도록: 목록에서 가져온 type(item.type)을 우선 고려
       type: (post.type || item.type || (prev && prev.type) || 'normal'),
-      // 댓글 수는 원본 사이트의 수와 우리가 아카이브한 수 중 큰 값을 유지 (삭제 방지)
       commentCount: Math.max(Number(post.commentCount || 0), (prev && prev.comments ? prev.comments.length : 0))
     });
 
-    // 이미지 로컬 캐싱 및 HTML 내 경로 치환
+    // 이미지 로컬 캐싱
     if (post.images && post.images.length > 0) {
-      const localImages = (prev && prev.localImages) || [];
       const cached = [];
       const hashes = [];
-
-      // [수정] 이미지가 있더라도 항상 최신 목록(post.images)을 기준으로 캐싱을 시도합니다.
       for (const img of post.images) {
         try {
           const result = await cacheImage(img, item.href, item.force);
           if (result && result.path) {
             cached.push(result.path);
-            // DB 저장을 위해 해시 정보가 포함된 객체를 별도로 관리하거나 merged에 합침
             hashes.push(result.originalHash);
           } else if (result && result.isBlocked) {
-            cached.push("blocked"); // 차단 표시
+            cached.push("blocked");
             hashes.push(result.originalHash);
           } else {
-            cached.push("");
-            hashes.push("");
+            cached.push(""); hashes.push("");
           }
         } catch (e) { cached.push(""); hashes.push(""); }
       }
       merged.localImages = cached.map((path, idx) => ({ path, originalHash: hashes[idx] }));
 
-      // [강력 수정] 이미지 태그 로컬 경로로 치환 (순서 기반 강제 매칭 포함)
-      if (post.images && post.images.length > 0) {
-        // 1. 먼저 정밀 치환 (URL 기반)
-        post.images.forEach((img, idx) => {
-          const localPath = merged.localImages[idx]?.path;
-          if (localPath && localPath !== "blocked") {
-            const decodedImg = decodeEntities(img);
+      // 🚨 이미지 태그 로컬 경로로 치환 (강력한 2단계 매핑)
+      // 1. URL 기반 정밀 치환
+      post.images.forEach((img, idx) => {
+        const localPath = merged.localImages[idx]?.path;
+        if (localPath) {
+          const decodedImg = decodeEntities(img);
+          const replaceTarget = localPath === "blocked" ? 
+            `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center;">차단된 이미지</div>` : 
+            localPath;
+
+          if (localPath === "blocked") {
+            contentHtml = contentHtml.split(img).join(replaceTarget);
+            contentHtml = contentHtml.split(decodedImg).join(replaceTarget);
+          } else {
             contentHtml = contentHtml.split(img).join(localPath);
             contentHtml = contentHtml.split(decodedImg).join(localPath);
           }
-        });
+        }
+      });
 
-      // [강력 수정] 이미지 태그 로컬 경로로 치환 (순서 기반 강제 매칭 포함)
-      if (post.images && post.images.length > 0) {
-        // 1. 먼저 정밀 치환 (URL 기반)
-        post.images.forEach((img, idx) => {
-          const localInfo = merged.localImages[idx];
-          if (localInfo && localInfo.path && localInfo.path !== "blocked") {
-            const decodedImg = decodeEntities(img);
-            contentHtml = contentHtml.split(img).join(localInfo.path);
-            contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
-          } else if (localInfo && localInfo.path === "blocked") {
-            const decodedImg = decodeEntities(img);
-            const blockTag = `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`;
-            contentHtml = contentHtml.split(img).join(blockTag);
-            contentHtml = contentHtml.split(decodedImg).join(blockTag);
+      // 2. 순서 기반 강제 매핑 (낙오자 구제)
+      let localIdx = 0;
+      contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
+        if (src.includes('duckdns.org') || src.includes('/media/')) return match; 
+        if (localIdx < merged.localImages.length) {
+          const localInfo = merged.localImages[localIdx++];
+          if (localInfo && localInfo.path === "blocked") {
+            return `<div style="padding:15px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b; font-size:11px; text-align:center; margin:10px 0;">차단된 이미지</div>`;
+          } else if (localInfo && localInfo.path) {
+            return `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
           }
-        });
+        }
+        return match;
+      });
 
-        // 2. [보강] 아직 치환되지 않은 외부 이미지가 있다면, 저장된 로컬 이미지와 순서대로 강제 매칭
-        let localIdx = 0;
-        contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
-          if (src.includes('duckdns.org') || src.includes('/media/')) return match; 
-          if (localIdx < merged.localImages.length) {
-            const localInfo = merged.localImages[localIdx++];
-            if (localInfo && localInfo.path === "blocked") {
-              return `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`;
-            } else if (localInfo && localInfo.path) {
-              return `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
-            }
-          }
-          return match;
-        });
+      // 3. 동영상 태그(.webp) 청소
+      merged.localImages.forEach(localInfo => {
+        if (localInfo && localInfo.path && localInfo.path.endsWith('.webp')) {
+          const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const videoBlockRe = new RegExp(`<video[^>]*>[\\s\\S]*?src=["']${escapedPath}["'][\\s\\S]*?<\\/video>|<video[^>]+src=["']${escapedPath}["'][^>]*>(?:<\\/video>)?`, 'gi');
+          contentHtml = contentHtml.replace(videoBlockRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
+        }
+      });
+    }
 
-        // 3. [보정] 동영상 태그 청소
-        merged.localImages.forEach(localInfo => {
-          if (localInfo && localInfo.path && localInfo.path.endsWith('.webp')) {
-            const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const videoBlockRe = new RegExp(`<video[^>]*>[\\s\\S]*?src=["']${escapedPath}["'][\\s\\S]*?<\\/video>|<video[^>]+src=["']${escapedPath}["'][^>]*>(?:<\\/video>)?`, 'gi');
-            contentHtml = contentHtml.replace(videoBlockRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
-          }
-        });
-      }
-
-      // 혹시라도 치환되지 않고 남은 로딩용 이미지가 있다면 삭제
-      contentHtml = contentHtml.replace(/<img[^>]+src=["'][^"']*gallview_loading_ori\.gif["'][^>]*>/gi, '');
-
+    contentHtml = contentHtml.replace(/<img[^>]+src=["'][^"']*gallview_loading_ori\.gif["'][^>]*>/gi, '');
     merged.contentHtml = contentHtml;
     await dbMgr.savePost(merged);
-    console.log(`[Archive] 글 ${no} (${post.title}) 수집 완료 (레이아웃 보존됨)`);
+    console.log(`[Archive] 글 ${no} (${post.title}) 수집 완료`);
 
   } catch (e) {
     if (e.message === "DELETED_ORIGIN" || e.message === "404") {
