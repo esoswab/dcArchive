@@ -625,11 +625,15 @@
         postImages.innerHTML = '';
         return;
       }
-      postImages.innerHTML = images.map((src) => `
+      postImages.innerHTML = images.map((src) => {
+        const cacheBuster = `?t=${Date.now()}`;
+        const bustedSrc = src + cacheBuster;
+        return `
         <div class="img-container">
           <button class="btn-purge" onclick="purgeImage('${src}')">영구 삭제/차단</button>
-          <a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="" loading="lazy" decoding="async"></a>
-        </div>`).join('');
+          <a href="${bustedSrc}" target="_blank" rel="noreferrer"><img src="${bustedSrc}" alt="" loading="lazy" decoding="async"></a>
+        </div>`;
+      }).join('');
     }
     function setPagination(page, pages) {
       currentPage = page;
@@ -850,8 +854,14 @@
       if (data.contentHtml) {
         setTimeout(() => {
           const imgs = postBody.querySelectorAll('img');
+          const cacheBuster = `?t=${Date.now()}`;
           imgs.forEach(img => {
             if (img.src.includes('/media/')) {
+              // 캐시 버스터 추가 (수동 갱신 시 이미지 교체 원활하게)
+              if (!img.src.includes('?t=')) {
+                img.src += cacheBuster;
+              }
+              
               const container = document.createElement('div');
               container.className = 'img-container';
               img.parentNode.insertBefore(container, img);
