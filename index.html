@@ -258,10 +258,18 @@
     .article-body img,
     .article-body iframe,
     .article-body embed {
-      max-width: 100%;
-      height: auto;
+      max-width: 100% !important;
+      height: auto !important;
       display: block;
-      margin: 10px 0
+      margin: 12px auto;
+      border-radius: 8px;
+    }
+    
+    .img-container {
+      position: relative;
+      display: block; /* 모바일 대응을 위해 block으로 변경 */
+      max-width: 100%;
+      margin: 0 auto;
     }
 
     .video-placeholder:hover {
@@ -299,11 +307,6 @@
       padding-top: 14px
     }
 
-    .img-container {
-      position: relative;
-      display: inline-block;
-      max-width: 100%;
-    }
 
     .btn-purge {
       position: absolute;
