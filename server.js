@@ -874,7 +874,27 @@ async function handleApi(parsed, res) {
   if (parsed.pathname === "/api/debug") {
     const total = await dbMgr.get("SELECT COUNT(*) as cnt FROM posts");
     const withCmt = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");
-    send(res, 200, JSON.stringify({ totalPosts: total.cnt, postsWithComments: withCmt.cnt }, null, 2), "application/json");
+    const imgStats = await dbMgr.get(`
+      SELECT 
+        COUNT(*) as totalRefs, 
+        COUNT(DISTINCT originalHash) as uniqueFiles,
+        (COUNT(*) - COUNT(DISTINCT originalHash)) as savedCount
+      FROM images
+      WHERE originalHash IS NOT NULL AND originalHash != ''
+    `);
+    
+    send(res, 200, JSON.stringify({ 
+      system: {
+        totalPosts: total.cnt, 
+        postsWithComments: withCmt.cnt
+      },
+      imageDeduplication: {
+        totalReferences: imgStats.totalRefs,
+        actualFilesOnDisk: imgStats.uniqueFiles,
+        savedSpaceCount: imgStats.savedCount,
+        efficiency: imgStats.totalRefs > 0 ? ((imgStats.savedCount / imgStats.totalRefs) * 100).toFixed(2) + '%' : '0%'
+      }
+    }, null, 2), "application/json");
     return true;
   }
   return false;
