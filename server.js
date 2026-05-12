@@ -891,16 +891,36 @@ async function handleApi(parsed, res) {
 
 
   if (parsed.pathname === "/api/media-all") {
+    const sort = parsed.query.sort || 'latest';
+    const postNo = parsed.query.postNo;
+    const limit = 60;
+    const offset = parseInt(parsed.query.offset || 0);
+
     try {
-      // 각 이미지가 몇 개의 게시글에서 참조되는지 함께 가져옵니다.
-      const list = await dbMgr.query(`
-        SELECT path, originalHash as hash, COUNT(*) as refCount 
+      let query = `
+        SELECT path, originalHash as hash, MAX(id) as lastId, COUNT(*) as refCount 
         FROM images 
-        GROUP BY originalHash 
-        ORDER BY refCount DESC 
-        LIMIT 200
-      `);
-      send(res, 200, JSON.stringify(list), "application/json");
+      `;
+      let params = [];
+      
+      if (postNo) {
+        query += ` WHERE postNo = ? `;
+        params.push(postNo);
+      }
+      
+      query += ` GROUP BY originalHash `;
+      
+      if (sort === 'popular') {
+        query += ` ORDER BY refCount DESC, lastId DESC `;
+      } else {
+        query += ` ORDER BY lastId DESC `;
+      }
+      
+      query += ` LIMIT ? OFFSET ? `;
+      params.push(limit, offset);
+
+      const data = await dbMgr.query(query, params);
+      send(res, 200, JSON.stringify(data), "application/json");
     } catch (e) {
       send(res, 500, JSON.stringify({ error: e.message }), "application/json");
     }
