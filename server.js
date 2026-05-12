@@ -155,26 +155,27 @@ function jitterWait(min, max) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ── 이미지 로컬 캐싱 ─────────────────────────────────────────
-async function cacheImage(url, referer, force = false) {
+// ── 미디어 로컬 캐싱 (이미지 & 영상 통합) ──────────────────────────
+async function cacheMedia(url, referer, force = false) {
   const urlHash = require('crypto').createHash('md5').update(url).digest('hex');
-  const outPath = path.join(MEDIA_DIR, urlHash + '.webp');
-  const localUrlPath = '/media/' + urlHash + '.webp';
-  
-  // 1. 이미 동일 URL로 캐시된 경우 (force가 아닐 때만 빠른 반환)
-  if (!force && fs.existsSync(outPath)) {
+  // 기본적으로 .webp로 시도하지만, 이미 저장된 파일이 있으면 그 확장자를 따름
+  let existingFile = null;
+  const extensions = ['.webp', '.mp4', '.webm', '.gif', '.jpg', '.png'];
+  for (const e of extensions) {
+    if (fs.existsSync(path.join(MEDIA_DIR, urlHash + e))) {
+      existingFile = urlHash + e;
+      break;
+    }
+  }
+
+  if (!force && existingFile) {
+    const localUrlPath = '/media/' + existingFile;
     const existing = await dbMgr.get(`SELECT originalHash FROM images WHERE path = ? LIMIT 1`, [localUrlPath]);
-    if (existing && existing.originalHash) {
-      return { path: localUrlPath, originalHash: existing.originalHash }; 
-    }
-    // DB에 해시 정보가 없으면 파일을 읽어서라도 해시를 생성 (중복 필터 및 블랙리스트 정합성 유지)
+    if (existing && existing.originalHash) return { path: localUrlPath, originalHash: existing.originalHash };
     try {
-      const fileBuf = fs.readFileSync(outPath);
-      const fileHash = crypto.createHash('md5').update(fileBuf).digest('hex');
+      const fileHash = crypto.createHash('md5').update(fs.readFileSync(path.join(MEDIA_DIR, existingFile))).digest('hex');
       return { path: localUrlPath, originalHash: fileHash };
-    } catch (e) {
-      return { path: localUrlPath, originalHash: '' };
-    }
+    } catch (e) { return { path: localUrlPath, originalHash: '' }; }
   }
 
   return new Promise((resolve, reject) => {
@@ -182,10 +183,10 @@ async function cacheImage(url, referer, force = false) {
     const headers = { 'User-Agent': profile.ua, 'Referer': referer || SOURCE + '/' };
     const urlObj = new URL(url);
     const options = { hostname: urlObj.hostname, path: urlObj.pathname + urlObj.search, headers };
+    
     https.get(options, (res) => {
-      // 리다이렉트 처리
       if (res.statusCode === 301 || res.statusCode === 302) {
-        cacheImage(res.headers.location, referer).then(resolve).catch(reject);
+        cacheMedia(res.headers.location, referer, force).then(resolve).catch(reject);
         return;
       }
       const chunks = [];
@@ -195,45 +196,61 @@ async function cacheImage(url, referer, force = false) {
           const buf = Buffer.concat(chunks);
           const originalHash = crypto.createHash('md5').update(buf).digest('hex');
           
-          // 블랙리스트 체크
           if (await dbMgr.isBlacklisted(originalHash)) {
-            console.log(`[Blacklist] 차단된 이미지 감지됨 (Hash: ${originalHash})`);
             resolve({ path: '', originalHash, isBlocked: true });
             return;
           }
 
-          // 2. [중복 필터] 동일 내용의 이미지가 다른 이름으로 이미 저장되어 있는지 확인
           const dupPath = await dbMgr.getPathByHash(originalHash);
-          if (dupPath) {
-            const fullDupPath = path.join(MEDIA_DIR, path.basename(dupPath));
-            if (fs.existsSync(fullDupPath)) {
-              // 중복 발견 시 해당 파일이 애니메이션인지 여부는 체크하지 않음 (대부분 정합함)
-              resolve({ path: dupPath, originalHash });
-              return;
+          if (dupPath && fs.existsSync(path.join(MEDIA_DIR, path.basename(dupPath)))) {
+            resolve({ path: dupPath, originalHash });
+            return;
+          }
+
+          // 이미지(GIF 포함)면 sharp로 최적화, 영상이면 그대로 저장
+          // 실제 Content-Type에 따라 확장자 결정
+          const contentType = res.headers['content-type'] || '';
+          let ext = '.webp';
+          if (contentType.includes('video/mp4')) ext = '.mp4';
+          else if (contentType.includes('video/webm')) ext = '.webm';
+          else if (contentType.includes('image/gif')) ext = '.gif';
+          else if (contentType.includes('image/jpeg')) ext = '.jpg';
+          else if (contentType.includes('image/png')) ext = '.png';
+
+          const outPath = path.join(MEDIA_DIR, urlHash + ext);
+          const localUrlPath = '/media/' + urlHash + ext;
+          const isVideo = contentType.includes('video');
+
+          if (isVideo) {
+            fs.writeFileSync(outPath, buf);
+            resolve({ path: localUrlPath, originalHash });
+          } else {
+            // 이미지 처리 (Sharp) - 애니메이션 WebP로 변환 저장
+            try {
+              const image = sharp(buf, { animated: true });
+              const metadata = await image.metadata();
+              const isAnimated = metadata.pages > 1;
+              const finalPath = path.join(MEDIA_DIR, urlHash + '.webp');
+              const finalUrl = '/media/' + urlHash + '.webp';
+              
+              await image
+                .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 60, animated: isAnimated })
+                .toFile(finalPath);
+              resolve({ path: finalUrl, originalHash });
+            } catch (err) {
+              // 실패 시 원본 그대로 저장
+              fs.writeFileSync(outPath, buf);
+              resolve({ path: localUrlPath, originalHash });
             }
           }
-
-          // 메타데이터 확인 (애니메이션 여부 판별)
-          const image = sharp(buf, { animated: true }); // 애니메이션 정보를 읽기 위해 플래그 추가
-          const metadata = await image.metadata();
-          const isAnimated = metadata.pages > 1;
-
-          if (isAnimated) {
-            console.log(`[Image] 애니메이션 감지됨: ${url} (Pages: ${metadata.pages})`);
-          }
-          
-          await image
-            .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 60, animated: isAnimated })
-            .toFile(outPath);
-            
-          resolve({ path: localUrlPath, originalHash });
         } catch (e) { reject(e); }
       });
-      res.on('error', reject);
     }).on('error', reject);
   });
 }
+// 하위 호환성을 위해 이름 유지
+const cacheImage = cacheMedia;
 
 
 // ── 통신 및 차단 회피 ───────────────────────────────────────
@@ -1016,14 +1033,15 @@ async function processItem(item, referer = SOURCE + '/') {
             contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
           }
           
-          // [추가] 혹시라도 이미지 태그 자체가 깨지지 않도록 스타일 보정
-          // (선택사항: 모든 로컬 이미지는 중앙 정렬 및 반응형 처리)
+          // [수정] 태그 강제 변환 없이 스타일만 보정 (사용자 요청 반영)
           const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const fixRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
           contentHtml = contentHtml.replace(fixRe, (match) => {
-             if (match.includes('style=')) return match; // 이미 스타일이 있으면 유지
+             if (match.includes('style=')) return match;
              return match.replace('<img', '<img style="max-width:100%; display:block; margin:10px 0; border-radius:8px;"');
           });
+          
+          // 만약 원본이 video 태그였다면 주소만 치환된 상태로 유지됨 (자연스러움)
           
         } else if (localInfo && localInfo.path === "blocked") {
           // 차단된 이미지는 태그를 찾아서 안내 문구로 교체해야 함
@@ -1302,7 +1320,13 @@ http.createServer(async (req, res) => {
       const f = path.join(MEDIA_DIR, path.basename(parsed.pathname));
       if (fs.existsSync(f)) {
         const ext = path.extname(f).toLowerCase();
-        const mime = ext === '.webp' ? 'image/webp' : ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/avif';
+        let mime = 'application/octet-stream';
+        if (ext === '.webp') mime = 'image/webp';
+        else if (ext === '.png') mime = 'image/png';
+        else if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+        else if (ext === '.mp4') mime = 'video/mp4';
+        else if (ext === '.webm') mime = 'video/webm';
+        else if (ext === '.gif') mime = 'image/gif';
         return send(res, 200, fs.readFileSync(f), mime);
       }
     }
