@@ -522,9 +522,9 @@ function parsePost(html, url) {
   // 본문 추출 고도화: 중첩된 div 구조에서도 끝까지 긁어오도록 개선
   let bodyH = "";
   const patterns = [
-    // 1. write_div나 writing_view_box를 찾되, 뒤에 스크립트나 특정 경계가 나올 때까지 최대한 긁음
-    /<div[^>]*class="[^"]*(?:write_div|writing_view_box)[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?:<script|<div class="comm_modi"|<!--|$)/i,
-    // 2. 만약 위에서 실패하면 가장 바깥쪽 div 상자만이라도 확보
+    // 1. 더 넓은 범위 매칭: 특정 클래스 시작부터 댓글/수정 버튼/끝 표시 전까지 최대한 긁음
+    /<div[^>]*class="[^"]*(?:write_div|writing_view_box)[^"]*"[^>]*>([\s\S]*?)(?:<div class="comm_modi"|<div class="report_btn"|<div class="comment_wrap"|<script|<!--|$)/i,
+    // 2. 백업: 기존 방식
     /<div[^>]*class="write_div"[\s\S]*?>([\s\S]*?)<\/div>/i,
     /<div[^>]*class="writing_view_box"[\s\S]*?>([\s\S]*?)<\/div>/i
   ];
@@ -927,7 +927,10 @@ async function processItem(item, referer = SOURCE + '/') {
     }
 
     const post = parsePost(html, item.href);
-    if (!post._isValid) return;
+    if (!post._isValid) {
+      console.log(`[Validation Failed] Post no: ${no}, Title: ${post.title}, BodyLen: ${post.rawText.length}, ImgLen: ${post.images.length}`);
+      return;
+    }
 
     // 🚨 HTML 레이아웃 보존: 원본 HTML을 정화하고 이미지 경로를 로컬로 치환
     let contentHtml = post.bodyHtml || "";
