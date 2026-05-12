@@ -266,7 +266,10 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
       console.log(`[DB Debug] Short Query: "${q}", Mode: "${sm}"`);
       // 🚀 [1~2글자] LIKE 방식
       const likeQ = `%${q}%`;
-      if (sm === "author") {
+      if (sm === "hash") {
+        where += " AND p.no IN (SELECT postNo FROM images WHERE originalHash = ?)";
+        whereParams.push(q);
+      } else if (sm === "author") {
         where += " AND p.author LIKE ?";
         whereParams.push(likeQ);
       } else if (sm === "comment") {
@@ -308,7 +311,10 @@ async function getList({ mode, page, q, sm, perPage = 50 }) {
       console.log(`[DB Debug] Long Query: "${q}", Mode: "${sm}"`);
       // 🚀 [3글자 이상] FTS5 Trigram 방식
       const ftsQ = `"${safeQ}"`;
-      if (sm === "author") {
+      if (sm === "hash") {
+        where += " AND p.no IN (SELECT postNo FROM images WHERE originalHash = ?)";
+        whereParams.push(q);
+      } else if (sm === "author") {
         where += " AND p.author LIKE ?";
         whereParams.push(`%${q}%`);
       } else if (sm === "comment") {

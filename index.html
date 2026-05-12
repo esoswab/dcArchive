@@ -537,6 +537,7 @@
             <option value="author">글쓴이</option>
             <option value="uid">아이디</option>
             <option value="comment">댓글</option>
+            <option value="hash">이미지해시</option>
           </select>
           <input id="searchInput" type="search" placeholder="검색어 입력..." />
         </div>
@@ -715,13 +716,10 @@
           <div class="gallery-card" id="card-${item.hash}">
             <a href="${item.path}" target="_blank"><img src="${item.path}" loading="lazy"></a>
             <div class="info">
-              <div style="cursor:pointer; text-decoration:underline;" onclick="showMediaPosts('${item.hash}', this)">
-                참조된 글: <span class="ref-count">${item.refCount}개</span>
+              <div style="cursor:pointer; text-decoration:underline; font-weight:700; color:var(--accent);" onclick="showMediaPosts('${item.hash}', this)">
+                참조된 글: ${item.refCount}개 (목록 보기)
               </div>
-              <div style="opacity:0.5; font-size:10px; word-break:break-all;">${(item.hash || 'no-hash').substring(0, 16)}...</div>
-              <div class="post-links hidden" style="margin-top:10px; border-top:1px dashed #ddd; padding-top:10px; font-size:11px; max-height:150px; overflow-y:auto;">
-                <!-- 연관 글 목록이 여기에 나타남 -->
-              </div>
+              <div style="opacity:0.5; font-size:10px; word-break:break-all; margin-top:5px;">${(item.hash || 'no-hash').substring(0, 16)}...</div>
             </div>
             <div class="actions">
               <button class="btn-purge" onclick="purgeImageFromGallery('${item.path}', '${item.hash}')">영구 삭제/차단</button>
@@ -749,33 +747,14 @@
       }
     }
     async function showMediaPosts(hash, el) {
-      const linkBox = el.parentNode.querySelector('.post-links');
-      if (!linkBox.classList.contains('hidden')) {
-        linkBox.classList.add('hidden');
-        return;
-      }
+      // 갤러리 검색 모드 실행
+      input.value = hash;
+      searchModeSelect.value = "hash";
+      currentQuery = hash;
+      currentPage = 1;
       
-      linkBox.innerHTML = '로딩 중...';
-      linkBox.classList.remove('hidden');
-      
-      try {
-        const res = await fetch(`/api/media-posts?hash=${hash}`);
-        const posts = await res.json();
-        
-        if (!posts.length) {
-          linkBox.innerHTML = '연관된 글을 찾을 수 없습니다.';
-          return;
-        }
-        
-        linkBox.innerHTML = posts.map(p => `
-          <div style="margin-bottom:6px;">
-            <a href="#" onclick="openPost('${p.no}'); return false;" style="color:var(--accent); font-weight:700;">[${p.no}]</a>
-            <span>${p.title}</span>
-          </div>
-        `).join('');
-      } catch (e) {
-        linkBox.innerHTML = '오류 발생: ' + e.message;
-      }
+      showList();
+      loadPage(1);
     }
 
     function syncCount(v) { resultCount.textContent = `${v}개 표시 중`; }

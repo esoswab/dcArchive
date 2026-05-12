@@ -890,7 +890,7 @@ async function handleApi(parsed, res) {
 
   if (parsed.pathname === "/api/media-posts") {
     const hash = parsed.query.hash;
-    if (!hash) return send(res, 400, "hash required");
+    if (!hash) return send(res, 400, JSON.stringify({ error: "hash required" }), "application/json");
     try {
       const posts = await dbMgr.query(`
         SELECT p.no, p.title, p.author 
@@ -935,7 +935,6 @@ async function handleApi(parsed, res) {
   }
   return false;
 }
-
 
 const WATCH_LIST_FILE = "watch-list.json";
 let WATCH_LIST = [];
