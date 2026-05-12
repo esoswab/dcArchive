@@ -170,7 +170,7 @@ function prepareStatements() {
       title       = excluded.title,
       author      = excluded.author,
       authorIcon  = excluded.authorIcon,
-      commentCount= excluded.commentCount,
+      commentCount= MAX(posts.commentCount, excluded.commentCount),
       date        = excluded.date,
       views       = excluded.views,
       likes       = excluded.likes,
@@ -180,7 +180,7 @@ function prepareStatements() {
       eSnO        = excluded.eSnO,
       boardType   = excluded.boardType,
       gallType    = excluded.gallType,
-      uid         = excluded.uid
+      uid         = CASE WHEN excluded.uid != '' THEN excluded.uid ELSE posts.uid END
   `);
   insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth) VALUES (?, ?, ?, ?, ?)`);
   insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path) VALUES (?, ?)`);

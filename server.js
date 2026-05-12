@@ -463,8 +463,10 @@ function parsePost(html, url) {
   const writerSection = writerSectionM ? writerSectionM[1] : html;
 
   const ipMatch = writerSection.match(/class="ip">([^<]*)<\/span>/i);
-  const uidMatch = writerSection.match(/data-uid="([^"]*)"/i);
+  // data-uid 추출 (속성 형태와 텍스트 형태 모두 지원)
+  const uidMatch = writerSection.match(/data-uid="([^"]*)"/i) || html.match(/data-uid="([^"]*)"/i);
   let uid = uidMatch ? uidMatch[1].trim() : "";
+  
   if (ipMatch && ipMatch[1] && ipMatch[1].trim()) {
     const ip = ipMatch[1].replace(/[()]/g, "").trim();
     if (ip) author += `(${ip})`;
@@ -858,10 +860,13 @@ async function processItem(item, referer = SOURCE + '/') {
 
     const merged = Object.assign({}, prev || {}, post, {
       no: no, // [중요] 목록에서 가져온 진짜 번호를 절대적으로 유지
+      uid: post.uid || (prev && prev.uid) || (item && item.uid) || "", // UID 보존 (목록/상세 어디서든 하나라도 찾으면 유지)
       archivedAt: (prev && prev.archivedAt) || Date.now(),
       updatedAt: Date.now(),
       // 갱신 시 type이 날아가지 않도록: 목록에서 가져온 type(item.type)을 우선 고려
-      type: (post.type || item.type || (prev && prev.type) || 'normal')
+      type: (post.type || item.type || (prev && prev.type) || 'normal'),
+      // 댓글 수는 원본 사이트의 수와 우리가 아카이브한 수 중 큰 값을 유지 (삭제 방지)
+      commentCount: Math.max(Number(post.commentCount || 0), (prev && prev.comments ? prev.comments.length : 0))
     });
 
     // 이미지 로컬 캐싱 및 HTML 내 경로 치환
