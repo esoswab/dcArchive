@@ -602,19 +602,21 @@ async function fetchComments(no, page, token, prevComments = []) {
           let author = c.name || "익명";
           if (c.ip) author += `(${c.ip})`;
           
-          // 아이콘 판별
+          // [수정] 디시 API의 다양한 필드명에 대응 (user_id, id, no 등)
+          const uid = c.user_id || c.id || "";
+          
+          // 아이콘 판별 고도화
           let icon = "";
-          if (c.user_id) {
-             // 고닉/반고닉 아이콘 (기본적으로 s, g, f, m 등으로 매칭)
-             // DC API에서는 보통 회원의 등급 정보를 숫자로 주기도 합니다.
-             if (c.is_manager === 'G') icon = 'g';
-             else if (c.is_manager === 'M') icon = 'm';
-             else if (c.user_id) icon = 's'; // 일반 고닉/반고닉
+          if (uid) {
+             // 관리자 여부 확인 (G: 주딱, M: 파딱)
+             if (c.is_manager === 'G' || c.member_icon === 'G') icon = 'g';
+             else if (c.is_manager === 'M' || c.member_icon === 'M') icon = 'm';
+             else icon = 's'; // 기본 고닉
           }
 
           return { 
             name: author, 
-            uid: c.user_id || "",
+            uid: uid,
             icon: icon,
             meta: c.reg_date || "", 
             body: decodeEntities(stripTags(c.memo || "")), 
@@ -622,6 +624,9 @@ async function fetchComments(no, page, token, prevComments = []) {
           };
         })
         .filter(c => c.name.trim() !== "댓글돌이");
+      
+      // 구조 파악을 위한 디버깅 로그 (필요 시 주석 해제)
+      // if (data.comments.length > 0) console.log("[Debug Comment]", data.comments[0]);
       newComments.push(...filteredBatch);
       if (newComments.length >= Number(data.total_cnt || 0)) break;
       cp++;

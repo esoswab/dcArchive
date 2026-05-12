@@ -38,6 +38,8 @@ async function init() {
   // 기존 테이블에 누락된 컬럼들 추가
   try { db.exec(`ALTER TABLE posts ADD COLUMN contentHtml TEXT`); } catch (e) {}
   try { db.exec(`ALTER TABLE posts ADD COLUMN uid TEXT`); } catch (e) {}
+  try { db.exec(`ALTER TABLE comments ADD COLUMN uid TEXT`); } catch (e) {}
+  try { db.exec(`ALTER TABLE comments ADD COLUMN icon TEXT`); } catch (e) {}
   try { db.exec(`ALTER TABLE images ADD COLUMN originalHash TEXT`); } catch (e) {}
 
   db.exec(`CREATE TABLE IF NOT EXISTS comments (
@@ -190,7 +192,7 @@ function prepareStatements() {
       gallType    = excluded.gallType,
       uid         = CASE WHEN excluded.uid != '' THEN excluded.uid ELSE posts.uid END
   `);
-  insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth) VALUES (?, ?, ?, ?, ?)`);
+  insertCommentStmt = db.prepare(`INSERT OR IGNORE INTO comments (postNo, name, meta, body, depth, uid, icon) VALUES (?, ?, ?, ?, ?, ?, ?)`);
   insertImageStmt = db.prepare(`INSERT OR IGNORE INTO images (postNo, path, originalHash) VALUES (?, ?, ?)`);
 }
 
@@ -207,7 +209,7 @@ async function savePost(post) {
 
     if (p.comments && Array.isArray(p.comments)) {
       for (const c of p.comments) {
-        insertCommentStmt.run(p.no, c.name || '', c.meta || '', c.body || '', c.depth || 0);
+        insertCommentStmt.run(p.no, c.name || '', c.meta || '', c.body || '', c.depth || 0, c.uid || '', c.icon || '');
       }
     }
 
@@ -228,7 +230,7 @@ async function getPost(no) {
   // 병렬 쿼리로 속도 최적화
   const [post, comments, imgs] = await Promise.all([
     db.prepare(`SELECT * FROM posts WHERE no = ?`).get(no),
-    db.prepare(`SELECT name, meta, body, depth FROM comments WHERE postNo = ? ORDER BY id ASC`).all(no),
+    db.prepare(`SELECT name, meta, body, depth, uid, icon FROM comments WHERE postNo = ? ORDER BY id ASC`).all(no),
     db.prepare(`SELECT path FROM images WHERE postNo = ? ORDER BY id ASC`).all(no)
   ]);
 
