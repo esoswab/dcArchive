@@ -1105,11 +1105,11 @@ async function processItem(item, referer = SOURCE + '/') {
       }
       merged.localImages = cached.map((path, idx) => ({ path, originalHash: hashes[idx] }));
 
-      // 🚨 [지능형 통합 매핑] 본문의 <img> 태그만 로컬 경로로 완벽하게 치환
+      // 🚨 [지능형 통합 매핑] 본문의 모든 미디어(img, video, source)를 로컬 이미지로 강제 치환
       if (post.images && post.images.length > 0) {
         let tagIdx = 0;
-        // 오직 <img> 태그만 찾아서 우리 서버의 이미지로 바꿉니다.
-        contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
+        // 본문의 모든 이미지/비디오 관련 태그를 훑으며 우리 서버의 이미지로 바꿉니다.
+        contentHtml = contentHtml.replace(/<(?:img|video|source)[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
           if (src.includes('duckdns.org') || src.includes('/media/')) return match; 
 
           let foundIdx = post.images.findIndex(img => img === src || decodeEntities(img) === src);
@@ -1122,11 +1122,14 @@ async function processItem(item, referer = SOURCE + '/') {
             if (localInfo.path === "blocked") {
               return `<div style="padding:15px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b; font-size:11px; text-align:center; margin:10px 0;">차단된 이미지</div>`;
             }
-            // 원본의 <img> 속성을 유지하면서 주소만 로컬로 교체 (스타일 추가)
+            // 원본이 어떤 태그였든, 우리 서버의 로컬 이미지(<img>)로 강제 변환하여 박제합니다.
             return `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
           }
           return match;
         });
+
+        // 2. [청소] 혹시나 남겨졌을지 모르는 비디오 닫기 태그(</video>) 등을 정리합니다.
+        contentHtml = contentHtml.replace(/<\/video>/gi, "");
       }
     }
 
