@@ -738,6 +738,8 @@ async function handleApi(parsed, res) {
       }
       
       if (post) {
+        // DB에는 href가 저장되지 않으므로 API 응답 시 복구해줍니다.
+        post.href = post.href || buildDcUrl(post.no);
         send(res, 200, JSON.stringify(post), "application/json");
       } else {
         send(res, 200, JSON.stringify({ deleted: true }), "application/json");
@@ -745,6 +747,7 @@ async function handleApi(parsed, res) {
     } catch (e) {
       console.error("[ApiPost Error]", e.message);
       const post = await dbMgr.getPost(no);
+      if (post) post.href = post.href || buildDcUrl(post.no);
       send(res, 200, JSON.stringify(post || { deleted: true }), "application/json");
     }
     return true;
