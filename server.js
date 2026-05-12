@@ -553,12 +553,15 @@ function parsePost(html, url) {
   // 본문 추출 고도화: 중첩된 div 구조에서도 끝까지 긁어오도록 개선
   let bodyH = "";
   const patterns = [
-    // 1. 최신/마이너 갤러리 표준: 본문 시작(write_div 등)부터 하단 섹션(댓글/신고/수정 등) 시작 전까지 통째로 긁음
-    // 중첩된 <div> 구조에 대응하기 위해 비탐욕적 매칭(?*)이 아닌, 하단 마커를 기준으로 매칭합니다.
-    /<div[^>]*class="[^"]*(?:write_div|writing_view_box|gallery_view_contents)[^"]*"[^>]*>([\s\S]+?)(?=<div class="comm_modi"|<div class="report_btn"|<div class="comment_wrap"|<div class="btn_report_box"|<div class="bottom_answer"|<div class="view_comment"|<div class="all_reply"|<script|<!--|$)/i,
+    // 1. 최신/마이너 갤러리 표준: 하단 마커를 기준으로 통째로 긁음
+    /class="[^"]*(?:write_div|writing_view_box|gallery_view_contents)[^"]*"[^>]*>([\s\S]+?)(?=<div class="comm_modi"|<div class="report_btn"|<div class="comment_wrap"|<div class="btn_report_box"|<div class="bottom_answer"|<div class="view_comment"|<div class="all_reply"|<script|<!--|$)/i,
     // 2. 백업: 단순 클래스 기반 매칭
     /<div[^>]*class="write_div"[\s\S]*?>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="writing_view_box"[\s\S]*?>([\s\S]*?)<\/div>/i
+    /<div[^>]*class="writing_view_box"[\s\S]*?>([\s\S]*?)<\/div>/i,
+    // 3. [추가] 이미지 없는 텍스트 전용 글에 쓰이는 구조 대응
+    /<div[^>]*class="[^"]*gallery_view_contents[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<section[^>]*class="[^"]*article_body[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
+    /<div[^>]*id="[^"]*article[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
   ];
 
   for (const p of patterns) {
@@ -567,6 +570,12 @@ function parsePost(html, url) {
       bodyH = m[1];
       break;
     }
+  }
+
+  // 디버그: 본문 추출 실패 시 원인 파악용 로그
+  if (!bodyH || bodyH.trim().length === 0) {
+    const snippet = html.substring(html.indexOf('<div class="'), html.indexOf('<div class="') + 500);
+    console.log(`[Debug] 본문 추출 실패 - URL: ${url}\n  HTML 스니펫: ${snippet.replace(/\s+/g, ' ').substring(0, 300)}`);
   }
 
   // 🚨 영상 태그(iframe, embed) 추출 및 보존
