@@ -161,10 +161,20 @@ async function cacheImage(url, referer) {
   const outPath = path.join(MEDIA_DIR, urlHash + '.webp');
   const localUrlPath = '/media/' + urlHash + '.webp';
   
-  // 1. 이미 동일 URL로 캐시된 경우 (빠른 반환)
+  // 1. 이미 동일 URL로 캐시된 경우
   if (fs.existsSync(outPath)) {
     const existing = await dbMgr.get(`SELECT originalHash FROM images WHERE path = ? LIMIT 1`, [localUrlPath]);
-    return { path: localUrlPath, originalHash: (existing && existing.originalHash) || '' }; 
+    if (existing && existing.originalHash) {
+      return { path: localUrlPath, originalHash: existing.originalHash }; 
+    }
+    // DB에 해시 정보가 없으면 파일을 읽어서라도 해시를 생성 (중복 필터 및 블랙리스트 정합성 유지)
+    try {
+      const fileBuf = fs.readFileSync(outPath);
+      const fileHash = crypto.createHash('md5').update(fileBuf).digest('hex');
+      return { path: localUrlPath, originalHash: fileHash };
+    } catch (e) {
+      return { path: localUrlPath, originalHash: '' };
+    }
   }
 
   return new Promise((resolve, reject) => {
@@ -197,20 +207,22 @@ async function cacheImage(url, referer) {
           if (dupPath) {
             const fullDupPath = path.join(MEDIA_DIR, path.basename(dupPath));
             if (fs.existsSync(fullDupPath)) {
-              console.log(`[Dedupe] 중복 이미지 발견, 기존 파일 재사용 (Hash: ${originalHash})`);
+              // 중복 발견 시 해당 파일이 애니메이션인지 여부는 체크하지 않음 (대부분 정합함)
               resolve({ path: dupPath, originalHash });
               return;
             }
           }
 
-          const image = sharp(buf);
+          // 메타데이터 확인 (애니메이션 여부 판별)
+          const image = sharp(buf, { animated: true }); // 애니메이션 정보를 읽기 위해 플래그 추가
           const metadata = await image.metadata();
-          
-          // 움짤(애니메이션) 처리 지원
           const isAnimated = metadata.pages > 1;
-          let pipeline = isAnimated ? sharp(buf, { animated: true }) : image;
+
+          if (isAnimated) {
+            console.log(`[Image] 애니메이션 감지됨: ${url} (Pages: ${metadata.pages})`);
+          }
           
-          await pipeline
+          await image
             .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 60, animated: isAnimated })
             .toFile(outPath);
