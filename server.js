@@ -904,7 +904,7 @@ async function handleApi(parsed, res) {
         WHERE 1=1
       `;
       let params = [];
-      
+
       if (postNo) {
         query += ` AND postNo = ? `;
         params.push(postNo);
@@ -913,15 +913,15 @@ async function handleApi(parsed, res) {
         query += ` AND originalHash = ? `;
         params.push(hash);
       }
-      
+
       query += ` GROUP BY originalHash `;
-      
+
       if (sort === 'popular') {
         query += ` ORDER BY refCount DESC, lastId DESC `;
       } else {
         query += ` ORDER BY lastId DESC `;
       }
-      
+
       query += ` LIMIT ? OFFSET ? `;
       params.push(limit, offset);
 
@@ -1105,39 +1105,27 @@ async function processItem(item, referer = SOURCE + '/') {
       }
       merged.localImages = cached.map((path, idx) => ({ path, originalHash: hashes[idx] }));
 
-      // 🚨 [지능형 통합 매핑] 본문 이미지를 로컬 경로로 완벽하게 치환
+      // 🚨 [지능형 통합 매핑] 본문의 <img> 태그만 로컬 경로로 완벽하게 치환
       if (post.images && post.images.length > 0) {
         let tagIdx = 0;
-        // 본문의 모든 img 태그를 순서대로 하나씩 분석하며 치환합니다.
+        // 오직 <img> 태그만 찾아서 우리 서버의 이미지로 바꿉니다.
         contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
-          if (src.includes('duckdns.org') || src.includes('/media/')) return match; // 이미 처리됨
+          if (src.includes('duckdns.org') || src.includes('/media/')) return match; 
 
-          // 1. 현재 태그가 원본 이미지 목록 중 몇 번째인지 찾습니다. (주소 기반)
           let foundIdx = post.images.findIndex(img => img === src || decodeEntities(img) === src);
-          
-          // 2. 만약 주소로 못 찾았다면, 현재 본문에서의 태그 순서(tagIdx)를 따릅니다. (낙오자 구제)
           if (foundIdx === -1) foundIdx = tagIdx;
           
           const localInfo = merged.localImages[foundIdx];
-          tagIdx++; // 다음 태그를 위해 인덱스 증가
+          tagIdx++;
 
           if (localInfo && localInfo.path) {
             if (localInfo.path === "blocked") {
               return `<div style="padding:15px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b; font-size:11px; text-align:center; margin:10px 0;">차단된 이미지</div>`;
             }
-            // 스타일을 입힌 로컬 이미지 태그로 교체
+            // 원본의 <img> 속성을 유지하면서 주소만 로컬로 교체 (스타일 추가)
             return `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
           }
           return match;
-        });
-
-        // 3. 동영상 태그(.webp) 청소
-        merged.localImages.forEach(localInfo => {
-          if (localInfo && localInfo.path && localInfo.path.endsWith('.webp')) {
-            const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const videoBlockRe = new RegExp(`<video[^>]*>[\\s\\S]*?src=["']${escapedPath}["'][\\s\\S]*?<\\/video>|<video[^>]+src=["']${escapedPath}["'][^>]*>(?:<\\/video>)?`, 'gi');
-            contentHtml = contentHtml.replace(videoBlockRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
-          }
         });
       }
     }
