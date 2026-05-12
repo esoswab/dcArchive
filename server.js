@@ -156,13 +156,13 @@ function jitterWait(min, max) {
 }
 
 // ── 이미지 로컬 캐싱 ─────────────────────────────────────────
-async function cacheImage(url, referer) {
+async function cacheImage(url, referer, force = false) {
   const urlHash = require('crypto').createHash('md5').update(url).digest('hex');
   const outPath = path.join(MEDIA_DIR, urlHash + '.webp');
   const localUrlPath = '/media/' + urlHash + '.webp';
   
-  // 1. 이미 동일 URL로 캐시된 경우
-  if (fs.existsSync(outPath)) {
+  // 1. 이미 동일 URL로 캐시된 경우 (force가 아닐 때만 빠른 반환)
+  if (!force && fs.existsSync(outPath)) {
     const existing = await dbMgr.get(`SELECT originalHash FROM images WHERE path = ? LIMIT 1`, [localUrlPath]);
     if (existing && existing.originalHash) {
       return { path: localUrlPath, originalHash: existing.originalHash }; 
@@ -984,7 +984,7 @@ async function processItem(item, referer = SOURCE + '/') {
       // [수정] 이미지가 있더라도 항상 최신 목록(post.images)을 기준으로 캐싱을 시도합니다.
       for (const img of post.images) {
         try {
-          const result = await cacheImage(img, item.href);
+          const result = await cacheImage(img, item.href, item.force);
           if (result && result.path) {
             cached.push(result.path);
             // DB 저장을 위해 해시 정보가 포함된 객체를 별도로 관리하거나 merged에 합침
