@@ -1280,9 +1280,9 @@ async function activeRangeCleaner() {
   }
 }
 
-// ── 초경량 번호 추적 스나이퍼 (Ultra-Light Sniper) ──────────────
+// ── 번호 예측 스나이퍼 (Predictive Sniper) ──────────────
 let lastKnownMaxId = 0;
-let sniperDelay = 3000; // 기본 3초 (더 공격적으로)
+let sniperDelay = 3000;
 
 async function sniffer() {
   if (isCrawling || isIpThrottled) {
@@ -1291,40 +1291,47 @@ async function sniffer() {
   }
 
   try {
-    // 1~2KB만 읽고 끊는 초경량 요청
-    const html = await fetchTextHead(`${SOURCE}/mgallery/board/lists/?id=vr&page=1`, SOURCE + '/');
+    const html = await fetchTextHead(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`, SOURCE + '/');
     const list = parseList(html);
-
-    // 현재 목록 중 가장 큰 번호 추출
     const currentMax = Math.max(...list.items.map(i => Number(i.no) || 0));
 
     if (lastKnownMaxId === 0) {
       lastKnownMaxId = currentMax;
     } else if (currentMax > lastKnownMaxId) {
       const newItems = list.items.filter(i => Number(i.no) > lastKnownMaxId);
-      console.log(`[Sniper] 새 글 ${newItems.length}개 발견! (MaxID: ${lastKnownMaxId} -> ${currentMax})`);
-
+      console.log(`[Sniper] 목록에서 새 글 ${newItems.length}개 발견! (MaxID: ${lastKnownMaxId} -> ${currentMax})`);
       lastKnownMaxId = currentMax;
-      sniperDelay = 2000; // 새 글 발견 시 주기를 2초로 가속하여 다음 글 대비
+      sniperDelay = 2000;
 
-      // 🚀 [업그레이드] 병렬 수집 엔진 가동
-      // 새 글이 여러 개일 때 순차적으로 기다리지 않고 동시에 낚아챕니다.
-      console.log(`[Sniper] ${newItems.length}개 게시글 병렬 수집 시작...`);
-      
       const tasks = newItems.map(async (item, index) => {
-        // 너무 동시에 들어가면 차단될 수 있으므로 각 작업 사이에 아주 미세한(0.1~0.2초) 시차를 둡니다.
         await new Promise(r => setTimeout(r, index * 150));
         return processItem(item, `${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`);
       });
-      
       await Promise.all(tasks);
-      console.log(`[Sniper] ${newItems.length}개 게시글 수집 시도 완료`);
     } else {
-      // 변화 없으면 주기를 서서히 15초까지 늘림
-      sniperDelay = Math.min(sniperDelay + 2000, 15000);
+      // 🚀 [핵심] 예측 스나이핑: 목록에 없더라도 다음 번호를 미리 찔러봅니다.
+      // 현재 번호의 다음 번호(Max + 1)를 선제적으로 획득 시도
+      const nextId = lastKnownMaxId + 1;
+      const targetUrl = buildDcUrl(nextId, 1);
+      
+      // 아주 가볍게 헤더만 먼저 확인하거나 바로 본문을 찔러봅니다.
+      const futureHtml = await fetchText(targetUrl, SOURCE + '/').catch(() => null);
+      
+      if (futureHtml && !futureHtml.includes('삭제된 게시물') && !futureHtml.includes('잘못된 접근') && futureHtml.includes('class="title_subject"')) {
+        console.log(`[Sniper] 🎯 예측 적중! 목록 노출 전 글 낚음: ${nextId}`);
+        lastKnownMaxId = nextId; // 다음 타겟 상향
+        
+        const parsed = parsePost(futureHtml, targetUrl);
+        if (parsed._isValid) {
+          await processItem({ no: nextId, href: targetUrl, type: 'normal', title: parsed.title }, SOURCE + '/');
+        }
+        sniperDelay = 1000; // 성공 시 더 빠르게 다음 번호 대기
+      } else {
+        sniperDelay = Math.min(sniperDelay + 1000, 10000); // 없으면 천천히
+      }
     }
   } catch (e) {
-    sniperDelay = 15000;
+    sniperDelay = 10000;
   }
 
   setTimeout(sniffer, sniperDelay);
