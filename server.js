@@ -1282,7 +1282,7 @@ async function activeRangeCleaner() {
 
 // ── 초경량 번호 추적 스나이퍼 (Ultra-Light Sniper) ──────────────
 let lastKnownMaxId = 0;
-let sniperDelay = 5000; // 기본 5초
+let sniperDelay = 3000; // 기본 3초 (더 공격적으로)
 
 async function sniffer() {
   if (isCrawling || isIpThrottled) {
@@ -1305,12 +1305,20 @@ async function sniffer() {
       console.log(`[Sniper] 새 글 ${newItems.length}개 발견! (MaxID: ${lastKnownMaxId} -> ${currentMax})`);
 
       lastKnownMaxId = currentMax;
-      sniperDelay = 3000; // 새 글 발견 시 3초로 가속
+      sniperDelay = 2000; // 새 글 발견 시 주기를 2초로 가속하여 다음 글 대비
 
-      for (const item of newItems) {
-        await processItem(item, `${SOURCE}/mgallery/board/lists/?id=vr&page=1`);
-        await jitterWait(200, 500); // 박제를 위해 전광석화처럼 이동
-      }
+      // 🚀 [업그레이드] 병렬 수집 엔진 가동
+      // 새 글이 여러 개일 때 순차적으로 기다리지 않고 동시에 낚아챕니다.
+      console.log(`[Sniper] ${newItems.length}개 게시글 병렬 수집 시작...`);
+      
+      const tasks = newItems.map(async (item, index) => {
+        // 너무 동시에 들어가면 차단될 수 있으므로 각 작업 사이에 아주 미세한(0.1~0.2초) 시차를 둡니다.
+        await new Promise(r => setTimeout(r, index * 150));
+        return processItem(item, `${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`);
+      });
+      
+      await Promise.all(tasks);
+      console.log(`[Sniper] ${newItems.length}개 게시글 수집 시도 완료`);
     } else {
       // 변화 없으면 주기를 서서히 15초까지 늘림
       sniperDelay = Math.min(sniperDelay + 2000, 15000);
