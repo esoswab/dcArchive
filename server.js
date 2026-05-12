@@ -871,6 +871,23 @@ async function handleApi(parsed, res) {
   }
 
 
+  if (parsed.pathname === "/api/media-all") {
+    try {
+      // 각 이미지가 몇 개의 게시글에서 참조되는지 함께 가져옵니다.
+      const list = await dbMgr.all(`
+        SELECT path, originalHash as hash, COUNT(*) as refCount 
+        FROM images 
+        GROUP BY originalHash 
+        ORDER BY refCount DESC 
+        LIMIT 200
+      `);
+      send(res, 200, JSON.stringify(list), "application/json");
+    } catch (e) {
+      send(res, 500, JSON.stringify({ error: e.message }), "application/json");
+    }
+    return true;
+  }
+
   if (parsed.pathname === "/api/debug") {
     const total = await dbMgr.get("SELECT COUNT(*) as cnt FROM posts");
     const withCmt = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");

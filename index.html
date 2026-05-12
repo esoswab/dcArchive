@@ -412,6 +412,57 @@
       display: none !important
     }
 
+    /* 갤러리 뷰 스타일 */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+      padding-bottom: 40px;
+    }
+    .gallery-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .gallery-card:hover { transform: translateY(-4px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
+    .gallery-card img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      cursor: pointer;
+      display: block;
+      background: #eee;
+    }
+    .gallery-card .info {
+      padding: 12px;
+      font-size: 13px;
+      flex-grow: 1;
+    }
+    .gallery-card .info .ref-count {
+      color: var(--accent);
+      font-weight: 700;
+      margin-left: 4px;
+    }
+    .gallery-card .actions {
+      padding: 10px;
+      border-top: 1px solid var(--line-2);
+      background: #fcfcfc;
+    }
+    .gallery-card .btn-purge {
+      width: 100%;
+      padding: 8px;
+      font-size: 12px;
+      position: static;
+      opacity: 1;
+      display: block;
+    }
+
     .matched-comment {
       padding: 4px 0 8px 24px;
       font-size: 13px;
@@ -490,10 +541,22 @@
           <input id="searchInput" type="search" placeholder="검색어 입력..." />
         </div>
         <div class="toolbar">
+          <button id="btnGallery" class="btn" style="background:var(--soft); border-color:var(--accent); color:var(--accent); font-weight:700;">🖼️ 이미지 관리</button>
           <button class="btn active" data-mode="all">전체</button>
           <button class="btn" data-mode="notice">공지</button>
           <button class="btn" data-mode="recommand">개념글</button>
           <button class="btn" data-mode="deleted">삭제글</button>
+        </div>
+      </div>
+      
+      <!-- 갤러리 뷰 모드 추가 -->
+      <div id="galleryView" class="hidden" style="padding:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--line-2); padding-bottom:15px;">
+          <h2 style="margin:0; font-size:20px;">🖼️ 전체 이미지 관리 <small id="galleryCount" style="font-size:14px; opacity:0.6; font-weight:normal; margin-left:10px;"></small></h2>
+          <button onclick="showList()" class="btn">목록으로 돌아가기</button>
+        </div>
+        <div id="galleryGrid" class="gallery-grid">
+          <!-- 이미지 카드들이 여기에 동적으로 삽입됨 -->
         </div>
       </div>
       <table>
@@ -611,8 +674,75 @@
     let firstPage = 1;
     let lastPage = 1;
 
-    function showList() { boardView.classList.remove('hidden'); articleView.classList.remove('active'); }
-    function showArticle() { boardView.classList.add('hidden'); articleView.classList.add('active'); }
+    const galleryView = document.getElementById('galleryView');
+    const galleryGrid = document.getElementById('galleryGrid');
+    const galleryCount = document.getElementById('galleryCount');
+    const btnGallery = document.getElementById('btnGallery');
+
+    function showList() { 
+      boardView.classList.remove('hidden'); 
+      articleView.classList.remove('active'); 
+      galleryView.classList.add('hidden');
+      postList.closest('table').style.display = 'table';
+      pagination.style.display = 'flex';
+    }
+    function showArticle() { 
+      boardView.classList.add('hidden'); 
+      articleView.classList.add('active'); 
+      galleryView.classList.add('hidden');
+    }
+    function showGallery() {
+      boardView.classList.remove('hidden'); // 헤더 유지를 위해 boardView는 둠
+      articleView.classList.remove('active'); 
+      galleryView.classList.remove('hidden');
+      
+      // 테이블과 페이징은 숨김
+      postList.closest('table').style.display = 'none';
+      pagination.style.display = 'none';
+      
+      loadGallery();
+    }
+    btnGallery.onclick = showGallery;
+
+    async function loadGallery() {
+      galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px;">이미지를 불러오는 중...</div>';
+      try {
+        const res = await fetch('/api/media-all');
+        const data = await res.json();
+        galleryCount.textContent = `(총 ${data.length}개 유형)`;
+        
+        galleryGrid.innerHTML = data.map(item => `
+          <div class="gallery-card" id="card-${item.hash}">
+            <a href="${item.path}" target="_blank"><img src="${item.path}" loading="lazy"></a>
+            <div class="info">
+              <div>참조된 글: <span class="ref-count">${item.refCount}개</span></div>
+              <div style="opacity:0.5; font-size:10px; word-break:break-all;">${item.hash.substring(0, 16)}...</div>
+            </div>
+            <div class="actions">
+              <button class="btn-purge" onclick="purgeImageFromGallery('${item.path}', '${item.hash}')">영구 삭제/차단</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:red;">불러오기 실패: ' + e.message + '</div>';
+      }
+    }
+
+    async function purgeImageFromGallery(path, hash) {
+      if (!confirm('이 이미지가 포함된 모든 글에서 이미지를 삭제하고 차단하시겠습니까?')) return;
+      const res = await fetch(`/api/purge-image?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      if (data.success) {
+        const card = document.getElementById(`card-${hash}`);
+        if (card) {
+          card.style.opacity = '0.3';
+          card.style.pointerEvents = 'none';
+          card.querySelector('.btn-purge').textContent = '완료';
+        }
+      } else {
+        alert('삭제 실패: ' + data.error);
+      }
+    }
     function syncCount(v) { resultCount.textContent = `${v}개 표시 중`; }
     function renderComments(comments) {
       const filtered = comments.filter(c => (c.name || '').trim() !== '댓글돌이');
