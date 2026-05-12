@@ -1142,7 +1142,39 @@ async function processItem(item, referer = SOURCE + '/') {
           return match;
         });
 
-        // 3. [보정] 동영상 태그가 이미지(.webp)를 감싸고 있는 경우 청소
+      // [강력 수정] 이미지 태그 로컬 경로로 치환 (순서 기반 강제 매칭 포함)
+      if (post.images && post.images.length > 0) {
+        // 1. 먼저 정밀 치환 (URL 기반)
+        post.images.forEach((img, idx) => {
+          const localInfo = merged.localImages[idx];
+          if (localInfo && localInfo.path && localInfo.path !== "blocked") {
+            const decodedImg = decodeEntities(img);
+            contentHtml = contentHtml.split(img).join(localInfo.path);
+            contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
+          } else if (localInfo && localInfo.path === "blocked") {
+            const decodedImg = decodeEntities(img);
+            const blockTag = `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`;
+            contentHtml = contentHtml.split(img).join(blockTag);
+            contentHtml = contentHtml.split(decodedImg).join(blockTag);
+          }
+        });
+
+        // 2. [보강] 아직 치환되지 않은 외부 이미지가 있다면, 저장된 로컬 이미지와 순서대로 강제 매칭
+        let localIdx = 0;
+        contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
+          if (src.includes('duckdns.org') || src.includes('/media/')) return match; 
+          if (localIdx < merged.localImages.length) {
+            const localInfo = merged.localImages[localIdx++];
+            if (localInfo && localInfo.path === "blocked") {
+              return `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`;
+            } else if (localInfo && localInfo.path) {
+              return `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
+            }
+          }
+          return match;
+        });
+
+        // 3. [보정] 동영상 태그 청소
         merged.localImages.forEach(localInfo => {
           if (localInfo && localInfo.path && localInfo.path.endsWith('.webp')) {
             const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1152,18 +1184,7 @@ async function processItem(item, referer = SOURCE + '/') {
         });
       }
 
-        } else if (localInfo && localInfo.path === "blocked") {
-          // 차단된 이미지는 태그를 찾아서 안내 문구로 교체해야 함
-          const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const decodedImg = decodeEntities(img);
-          const escapedDecoded = decodedImg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["'](?:${escapedImg}|${escapedDecoded})["'][^>]*>`, 'gi');
-          const blockTag = `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`;
-          contentHtml = contentHtml.replace(imgTagRe, blockTag);
-        }
-      });
-
-      // 혹시라도 치환되지 않고 남은 로딩용 이미지가 있다면 그제서야 숨깁니다. (태그 자체를 삭제)
+      // 혹시라도 치환되지 않고 남은 로딩용 이미지가 있다면 삭제
       contentHtml = contentHtml.replace(/<img[^>]+src=["'][^"']*gallview_loading_ori\.gif["'][^>]*>/gi, '');
     }
 
