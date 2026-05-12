@@ -552,8 +552,16 @@
       
       <!-- 갤러리 뷰 모드 추가 -->
       <div id="galleryView" class="hidden" style="padding:20px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--line-2); padding-bottom:15px;">
-          <h2 style="margin:0; font-size:20px;">🖼️ 전체 이미지 관리 <small id="galleryCount" style="font-size:14px; opacity:0.6; font-weight:normal; margin-left:10px;"></small></h2>
+        <div id="media-gallery-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+          <h2 style="margin:0; font-size:20px;">🖼️ 전체 이미지 관리</h2>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <select id="gallerySort" onchange="resetAndLoadGallery()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
+              <option value="latest">최신순</option>
+              <option value="popular">인기순</option>
+            </select>
+            <input type="number" id="galleryPostNo" placeholder="글 번호로 찾기" style="padding:8px; border-radius:8px; border:1px solid var(--border); width:120px;">
+            <button onclick="resetAndLoadGallery()" class="btn">검색</button>
+          </div>
           <button onclick="showList()" class="btn">목록으로 돌아가기</button>
         </div>
         <div id="galleryGrid" class="gallery-grid">
@@ -677,8 +685,11 @@
 
     const galleryView = document.getElementById('galleryView');
     const galleryGrid = document.getElementById('galleryGrid');
-    const galleryCount = document.getElementById('galleryCount');
     const btnGallery = document.getElementById('btnGallery');
+
+    let galleryOffset = 0;
+    let galleryLoading = false;
+    let galleryEnd = false;
 
     function showList() { 
       boardView.classList.remove('hidden'); 
@@ -693,26 +704,42 @@
       galleryView.classList.add('hidden');
     }
     function showGallery() {
-      boardView.classList.remove('hidden'); // 헤더 유지를 위해 boardView는 둠
+      boardView.classList.remove('hidden');
       articleView.classList.remove('active'); 
       galleryView.classList.remove('hidden');
       
-      // 테이블과 페이징은 숨김
       postList.closest('table').style.display = 'none';
       pagination.style.display = 'none';
       
-      loadGallery();
+      resetAndLoadGallery();
     }
     btnGallery.onclick = showGallery;
 
-    async function loadGallery() {
-      galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px;">이미지를 불러오는 중...</div>';
+    async function loadGallery(isAppend = false) {
+      if (galleryLoading) return;
+      if (!isAppend) {
+        galleryOffset = 0;
+        galleryEnd = false;
+        galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px;">불러오는 중...</div>';
+      }
+      
+      galleryLoading = true;
+      const sort = document.getElementById('gallerySort').value;
+      const postNo = document.getElementById('galleryPostNo').value;
+      
       try {
-        const res = await fetch('/api/media-all');
+        const res = await fetch(`/api/media-all?sort=${sort}&postNo=${postNo}&offset=${galleryOffset}`);
         const data = await res.json();
-        galleryCount.textContent = `(총 ${data.length}개 유형)`;
         
-        galleryGrid.innerHTML = data.map(item => `
+        if (!isAppend) galleryGrid.innerHTML = '';
+        
+        if (!data || data.length === 0) {
+          galleryEnd = true;
+          if (!isAppend) galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px;">이미지가 없습니다.</div>';
+          return;
+        }
+
+        const html = data.map(item => `
           <div class="gallery-card" id="card-${item.hash}">
             <a href="${item.path}" target="_blank"><img src="${item.path}" loading="lazy"></a>
             <div class="info">
@@ -726,10 +753,29 @@
             </div>
           </div>
         `).join('');
+        
+        galleryGrid.insertAdjacentHTML('beforeend', html);
+        galleryOffset += data.length;
       } catch (e) {
-        galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:red;">불러오기 실패: ' + e.message + '</div>';
+        console.error(e);
+        if (!isAppend) galleryGrid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:red;">불러오기 실패: ' + e.message + '</div>';
+      } finally {
+        galleryLoading = false;
       }
     }
+
+    function resetAndLoadGallery() {
+      loadGallery(false);
+    }
+
+    window.addEventListener('scroll', () => {
+      if (galleryView.classList.contains('hidden')) return;
+      if (galleryLoading || galleryEnd) return;
+      
+      if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+        loadGallery(true);
+      }
+    });
 
     async function purgeImageFromGallery(path, hash) {
       if (!confirm('이 이미지가 포함된 모든 글에서 이미지를 삭제하고 차단하시겠습니까?')) return;
