@@ -888,6 +888,25 @@ async function handleApi(parsed, res) {
     return true;
   }
 
+  if (parsed.pathname === "/api/media-posts") {
+    const hash = parsed.query.hash;
+    if (!hash) return send(res, 400, "hash required");
+    try {
+      const posts = await dbMgr.query(`
+        SELECT p.no, p.title, p.author 
+        FROM posts p
+        JOIN images i ON p.no = i.postNo
+        WHERE i.originalHash = ?
+        ORDER BY p.no DESC
+        LIMIT 100
+      `, [hash]);
+      send(res, 200, JSON.stringify(posts), "application/json");
+    } catch (e) {
+      send(res, 500, JSON.stringify({ error: e.message }), "application/json");
+    }
+    return true;
+  }
+
   if (parsed.pathname === "/api/debug") {
     const total = await dbMgr.get("SELECT COUNT(*) as cnt FROM posts");
     const withCmt = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");
