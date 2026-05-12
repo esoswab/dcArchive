@@ -195,6 +195,14 @@ async function cacheMedia(url, referer, force = false) {
       res.on('end', async () => {
         try {
           const buf = Buffer.concat(chunks);
+          if (buf.length < 100) return resolve(null);
+          
+          // 🚨 [용량 방어] 5MB가 넘어가는 '용량 폭탄'은 서버에 저장하지 않고 원본 링크 유지
+          if (buf.length > 5 * 1024 * 1024) {
+            console.log(`[Skip] 초대형 파일 제외 (${(buf.length / 1024 / 1024).toFixed(1)}MB): ${url}`);
+            return resolve({ path: url, originalHash: crypto.createHash('md5').update(buf).digest('hex') });
+          }
+
           const originalHash = crypto.createHash('md5').update(buf).digest('hex');
 
           if (await dbMgr.isBlacklisted(originalHash)) {
@@ -235,8 +243,8 @@ async function cacheMedia(url, referer, force = false) {
               const finalUrl = '/media/' + urlHash + '.webp';
 
               await image
-                .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
-                .webp({ quality: 60, animated: isAnimated })
+                .resize(1000, 1000, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 45, animated: isAnimated })
                 .toFile(finalPath);
               resolve({ path: finalUrl, originalHash });
             } catch (err) {
@@ -611,30 +619,30 @@ async function fetchComments(no, page, token, prevComments = []) {
         .map(c => {
           let author = c.name || "익명";
           if (c.ip) author += `(${c.ip})`;
-          
+
           // [수정] 디시 API의 다양한 필드명에 대응 (user_id, id, no 등)
           const uid = c.user_id || c.id || "";
-          
+
           // 아이콘 판별 고도화
           let icon = "";
           if (uid) {
-             // 관리자 여부 확인 (G: 주딱, M: 파딱)
-             if (c.is_manager === 'G' || c.member_icon === 'G') icon = 'g';
-             else if (c.is_manager === 'M' || c.member_icon === 'M') icon = 'm';
-             else icon = 's'; // 기본 고닉
+            // 관리자 여부 확인 (G: 주딱, M: 파딱)
+            if (c.is_manager === 'G' || c.member_icon === 'G') icon = 'g';
+            else if (c.is_manager === 'M' || c.member_icon === 'M') icon = 'm';
+            else icon = 's'; // 기본 고닉
           }
 
-          return { 
-            name: author, 
+          return {
+            name: author,
             uid: uid,
             icon: icon,
-            meta: c.reg_date || "", 
-            body: decodeEntities(stripTags(c.memo || "")), 
-            depth: Number(c.depth || 0) 
+            meta: c.reg_date || "",
+            body: decodeEntities(stripTags(c.memo || "")),
+            depth: Number(c.depth || 0)
           };
         })
         .filter(c => c.name.trim() !== "댓글돌이");
-      
+
       // 구조 파악을 위한 디버깅 로그 (필요 시 주석 해제)
       // if (data.comments.length > 0) console.log("[Debug Comment]", data.comments[0]);
       newComments.push(...filteredBatch);
@@ -1147,11 +1155,11 @@ async function processItem(item, referer = SOURCE + '/') {
         let tagIdx = 0;
         // 본문의 모든 이미지/비디오 관련 태그를 훑으며 우리 서버의 이미지로 바꿉니다.
         contentHtml = contentHtml.replace(/<(?:img|video|source)[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
-          if (src.includes('duckdns.org') || src.includes('/media/')) return match; 
+          if (src.includes('duckdns.org') || src.includes('/media/')) return match;
 
           let foundIdx = post.images.findIndex(img => img === src || decodeEntities(img) === src);
           if (foundIdx === -1) foundIdx = tagIdx;
-          
+
           const localInfo = merged.localImages[foundIdx];
           tagIdx++;
 
