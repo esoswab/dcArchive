@@ -184,7 +184,7 @@ async function cacheMedia(url, referer, force = false) {
     const headers = { 'User-Agent': profile.ua, 'Referer': referer || SOURCE + '/' };
     const urlObj = new URL(url);
     const options = { hostname: urlObj.hostname, path: urlObj.pathname + urlObj.search, headers };
-    
+
     https.get(options, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
         cacheMedia(res.headers.location, referer, force).then(resolve).catch(reject);
@@ -196,7 +196,7 @@ async function cacheMedia(url, referer, force = false) {
         try {
           const buf = Buffer.concat(chunks);
           const originalHash = crypto.createHash('md5').update(buf).digest('hex');
-          
+
           if (await dbMgr.isBlacklisted(originalHash)) {
             resolve({ path: '', originalHash, isBlocked: true });
             return;
@@ -233,7 +233,7 @@ async function cacheMedia(url, referer, force = false) {
               const isAnimated = metadata.pages > 1;
               const finalPath = path.join(MEDIA_DIR, urlHash + '.webp');
               const finalUrl = '/media/' + urlHash + '.webp';
-              
+
               await image
                 .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
                 .webp({ quality: 60, animated: isAnimated })
@@ -531,7 +531,7 @@ function parsePost(html, url) {
   // data-uid 추출 (속성 형태와 텍스트 형태 모두 지원)
   const uidMatch = writerSection.match(/data-uid="([^"]*)"/i) || html.match(/data-uid="([^"]*)"/i);
   let uid = uidMatch ? uidMatch[1].trim() : "";
-  
+
   if (ipMatch && ipMatch[1] && ipMatch[1].trim()) {
     const ip = ipMatch[1].replace(/[()]/g, "").trim();
     if (ip) author += `(${ip})`;
@@ -646,9 +646,9 @@ async function mergeCacheFromList(page, list) {
 
 function send(res, code, data, type = "text/plain") {
   if (res.writableEnded) return;
-  
+
   let payload = data;
-  let headers = { 
+  let headers = {
     "Content-Type": type.includes("charset") ? type : type + "; charset=utf-8",
     "Access-Control-Allow-Origin": "*"
   };
@@ -785,7 +785,7 @@ async function handleApi(parsed, res) {
         await processItem({ no, href: url, page: parsed.query.page || 1 }, SOURCE + '/');
         post = await dbMgr.getPost(no);
       }
-      
+
       if (post) {
         // DB에는 href가 저장되지 않으므로 API 응답 시 복구해줍니다.
         post.href = post.href || buildDcUrl(post.no);
@@ -816,14 +816,14 @@ async function handleApi(parsed, res) {
       if (targetHash) await dbMgr.blacklistImage(targetHash, "사용자 요청에 의한 말소");
 
       // 2. 해당 해시를 가진 모든 이미지 정보 가져오기
-      const allOccurrences = targetHash 
+      const allOccurrences = targetHash
         ? await dbMgr.db.prepare(`SELECT path FROM images WHERE originalHash = ?`).all(targetHash)
         : [{ path: imgPath }];
 
       let deletedCount = 0;
       for (const occurrence of allOccurrences) {
         const fullPath = path.join(MEDIA_DIR, path.basename(occurrence.path));
-        
+
         // 3. 물리적 파일 삭제
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
@@ -842,7 +842,7 @@ async function handleApi(parsed, res) {
           ), ?)
           WHERE contentHtml LIKE ?
         `).run(`%${occurrence.path}%`, replacement, `%${occurrence.path}%`);
-        
+
         // 단순 REPLACE는 HTML 구조에 따라 위험할 수 있으므로, 더 안전한 정규식 기반 업데이트가 필요하지만 
         // SQLite 내부에서 정규식 처리는 어려우므로 fetch -> replace -> save 방식으로 진행
         const affectedPosts = await dbMgr.query(`SELECT no, contentHtml FROM posts WHERE contentHtml LIKE ?`, [`%${occurrence.path}%`]);
@@ -893,6 +893,7 @@ async function handleApi(parsed, res) {
   if (parsed.pathname === "/api/media-all") {
     const sort = parsed.query.sort || 'latest';
     const postNo = parsed.query.postNo;
+    const hash = parsed.query.hash;
     const limit = 60;
     const offset = parseInt(parsed.query.offset || 0);
 
@@ -900,12 +901,17 @@ async function handleApi(parsed, res) {
       let query = `
         SELECT path, originalHash as hash, MAX(id) as lastId, COUNT(*) as refCount 
         FROM images 
+        WHERE 1=1
       `;
       let params = [];
       
       if (postNo) {
-        query += ` WHERE postNo = ? `;
+        query += ` AND postNo = ? `;
         params.push(postNo);
+      }
+      if (hash) {
+        query += ` AND originalHash = ? `;
+        params.push(hash);
       }
       
       query += ` GROUP BY originalHash `;
@@ -957,10 +963,10 @@ async function handleApi(parsed, res) {
       FROM images
       WHERE originalHash IS NOT NULL AND originalHash != ''
     `);
-    
-    send(res, 200, JSON.stringify({ 
+
+    send(res, 200, JSON.stringify({
       system: {
-        totalPosts: total.cnt, 
+        totalPosts: total.cnt,
         postsWithComments: withCmt.cnt
       },
       imageDeduplication: {
@@ -1119,7 +1125,7 @@ async function processItem(item, referer = SOURCE + '/') {
           // 태그를 복잡하게 찾는 대신, 본문 내의 모든 해당 URL을 로컬 경로로 단순 치환합니다.
           // 이 방식이 속성 순서나 따옴표 종류, 추가 속성 유무에 상관없이 가장 확실합니다.
           const decodedImg = decodeEntities(img);
-          
+
           // [중요] 반드시 &amp; 형태를 먼저 치환한 후 & 형태를 치환해야 'amp;'가 남는 것을 방지할 수 있습니다.
           if (img.includes('&amp;')) {
             contentHtml = contentHtml.split(img).join(localInfo.path);
@@ -1128,7 +1134,7 @@ async function processItem(item, referer = SOURCE + '/') {
             contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
             contentHtml = contentHtml.split(img).join(localInfo.path);
           }
-          
+
           // [추가] 동영상 태그 복원 로직: 
           // 만약 디시에서 <video>로 줬는데 우리가 .webp(이미지)로 저장했다면, 
           // <video>...</video> 전체를 찾아내어 안의 이미지만 남기고 태그를 제거합니다.
@@ -1137,7 +1143,7 @@ async function processItem(item, referer = SOURCE + '/') {
             // <video> 태그 블록 전체를 찾아서 <img> 태그 하나로 교체
             const videoBlockRe = new RegExp(`<video[^>]*>[\\s\\S]*?src=["']${escapedPath}["'][\\s\\S]*?<\\/video>|<video[^>]+src=["']${escapedPath}["'][^>]*>(?:<\\/video>)?`, 'gi');
             contentHtml = contentHtml.replace(videoBlockRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
-            
+
             // 혹시라도 <source> 태그만 남은 경우도 청소
             const sourceTagRe = new RegExp(`<source[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
             contentHtml = contentHtml.replace(sourceTagRe, '');
@@ -1147,10 +1153,10 @@ async function processItem(item, referer = SOURCE + '/') {
           const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const fixRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
           contentHtml = contentHtml.replace(fixRe, (match) => {
-             if (match.includes('style=')) return match;
-             return match.replace('<img', '<img style="max-width:100%; display:block; margin:10px 0; border-radius:8px;"');
+            if (match.includes('style=')) return match;
+            return match.replace('<img', '<img style="max-width:100%; display:block; margin:10px 0; border-radius:8px;"');
           });
-          
+
         } else if (localInfo && localInfo.path === "blocked") {
           // 차단된 이미지는 태그를 찾아서 안내 문구로 교체해야 함
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1333,14 +1339,14 @@ async function sniffer() {
       // 현재 번호의 다음 번호(Max + 1)를 선제적으로 획득 시도
       const nextId = lastKnownMaxId + 1;
       const targetUrl = buildDcUrl(nextId, 1);
-      
+
       // 아주 가볍게 헤더만 먼저 확인하거나 바로 본문을 찔러봅니다.
       const futureHtml = await fetchText(targetUrl, SOURCE + '/').catch(() => null);
-      
+
       if (futureHtml && !futureHtml.includes('삭제된 게시물') && !futureHtml.includes('잘못된 접근') && futureHtml.includes('class="title_subject"')) {
         console.log(`[Sniper] 🎯 예측 적중! 목록 노출 전 글 낚음: ${nextId}`);
         lastKnownMaxId = nextId; // 다음 타겟 상향
-        
+
         const parsed = parsePost(futureHtml, targetUrl);
         if (parsed._isValid) {
           await processItem({ no: nextId, href: targetUrl, type: 'normal', title: parsed.title }, SOURCE + '/');
