@@ -1128,20 +1128,6 @@ async function processItem(item, referer = SOURCE + '/') {
           }
         });
 
-        // 2. [보강] 아직 치환되지 않은 외부 이미지가 있다면, 저장된 로컬 이미지와 순서대로 강제 매칭
-        // (주소 뒤에 붙은 ?t= 파라미터 등이 달라져서 치환에 실패한 경우를 구제)
-        let localIdx = 0;
-        contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
-          if (src.includes('duckdns.org') || src.includes('/media/')) return match; // 이미 로컬 주소임
-          if (localIdx < merged.localImages.length) {
-            const localPath = merged.localImages[localIdx++].path;
-            if (localPath && localPath !== "blocked") {
-              return `<img src="${localPath}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
-            }
-          }
-          return match;
-        });
-
       // [강력 수정] 이미지 태그 로컬 경로로 치환 (순서 기반 강제 매칭 포함)
       if (post.images && post.images.length > 0) {
         // 1. 먼저 정밀 치환 (URL 기반)
@@ -1186,7 +1172,6 @@ async function processItem(item, referer = SOURCE + '/') {
 
       // 혹시라도 치환되지 않고 남은 로딩용 이미지가 있다면 삭제
       contentHtml = contentHtml.replace(/<img[^>]+src=["'][^"']*gallview_loading_ori\.gif["'][^>]*>/gi, '');
-    }
 
     merged.contentHtml = contentHtml;
     await dbMgr.savePost(merged);
