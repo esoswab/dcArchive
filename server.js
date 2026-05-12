@@ -368,8 +368,8 @@ async function postJson(url, body, extraHeaders = {}, retries = 3) {
 function firstMatch(html, res) { for (const re of res) { const m = html.match(re); if (m) return m[1]; } return ""; }
 function extractImageUrls(html, baseUrl) {
   const urls = new Set();
-  // src, data-original, data-src 속성을 모두 탐색합니다 (따옴표 종류 상관없이)
-  const re = /<img[^>]*(?:src|data-original|data-src|data-src|data-original)\s*=\s*["']([^"']+)["']/gi;
+  // img 태그의 src, data-original, data-src 속성과 video 태그의 poster 등을 탐색합니다.
+  const re = /<(?:img|video)[^>]*(?:src|data-original|data-src|poster)\s*=\s*["']([^"']+)["']/gi;
   let m;
   while ((m = re.exec(html))) {
     const u = m[1];
@@ -951,12 +951,12 @@ async function processItem(item, referer = SOURCE + '/') {
     // 🚨 HTML 레이아웃 보존: 원본 HTML을 정화하고 이미지 경로를 로컬로 치환
     let contentHtml = post.bodyHtml || "";
 
-    // 영상 태그(iframe, embed)를 작은 아이콘 박스로 치환
+    // 영상 태그(video, iframe, embed)를 작은 아이콘 박스로 치환 (디시 서버 부하 및 보안 정책 대응)
     const videoPlaceholder = `<a href="${item.href}" target="_blank" class="video-placeholder" title="원본 글에서 영상 보기" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:6px 12px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; color:#475467; font-size:12px; margin:8px 0; user-select:none;">
       <span style="font-size:16px;">📹</span>
-      <strong style="color:#475467;">원본 사이트 영상 (클릭하여 보기)</strong>
+      <strong style="color:#475467;">원본 사이트 영상/움짤 (클릭하여 보기)</strong>
     </a>`;
-    contentHtml = contentHtml.replace(/<(?:iframe|embed)[\s\S]*?<\/(?:iframe|embed)>|<(?:iframe|embed)[\s\S]*?>/gi, videoPlaceholder);
+    contentHtml = contentHtml.replace(/<(?:video|iframe|embed)[\s\S]*?<\/(?:video|iframe|embed)>|<(?:video|iframe|embed)[\s\S]*?>/gi, videoPlaceholder);
 
     // 불필요한 태그 제거 (스크립트 등)
     contentHtml = contentHtml.replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -1005,25 +1005,28 @@ async function processItem(item, referer = SOURCE + '/') {
       post.images.forEach((img, idx) => {
         const localInfo = merged.localImages[idx];
         if (localInfo && localInfo.path && localInfo.path !== "blocked") {
-          // 1. 원본 형태 그대로 치환 시도
-          const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          // 2. 엔티티 디코딩된 형태도 준비 (&amp; -> &)
+          // 태그를 복잡하게 찾는 대신, 본문 내의 모든 해당 URL을 로컬 경로로 단순 치환합니다.
+          // 이 방식이 속성 순서나 따옴표 종류, 추가 속성 유무에 상관없이 가장 확실합니다.
           const decodedImg = decodeEntities(img);
-          const escapedDecoded = decodedImg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           
-          // src, data-original, data-src 등 어떤 속성에 들어있든 해당 태그 전체를 찾아서 교체 (따옴표 유연하게)
-          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["'](?:${escapedImg}|${escapedDecoded})["'][^>]*>`, 'gi');
-          
-          const newTag = `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;" loading="lazy">`;
-          
-          if (imgTagRe.test(contentHtml)) {
-             contentHtml = contentHtml.replace(imgTagRe, newTag);
-          } else {
-             // 태그 전체 매칭에 실패하면 URL 문자열만이라도 강제 치환 (속성 내부에 있는 것)
-             const urlRe = new RegExp(`(["'])(?:${escapedImg}|${escapedDecoded})\\1`, 'g');
-             contentHtml = contentHtml.replace(urlRe, `$1${localInfo.path}$1`);
+          // 1. 원본 형태 치환
+          contentHtml = contentHtml.split(img).join(localInfo.path);
+          // 2. 디코딩된 형태 치환 (&amp; -> &)
+          if (img !== decodedImg) {
+            contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
           }
+          
+          // [추가] 혹시라도 이미지 태그 자체가 깨지지 않도록 스타일 보정
+          // (선택사항: 모든 로컬 이미지는 중앙 정렬 및 반응형 처리)
+          const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const fixRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
+          contentHtml = contentHtml.replace(fixRe, (match) => {
+             if (match.includes('style=')) return match; // 이미 스타일이 있으면 유지
+             return match.replace('<img', '<img style="max-width:100%; display:block; margin:10px 0; border-radius:8px;"');
+          });
+          
         } else if (localInfo && localInfo.path === "blocked") {
+          // 차단된 이미지는 태그를 찾아서 안내 문구로 교체해야 함
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const decodedImg = decodeEntities(img);
           const escapedDecoded = decodedImg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
