@@ -685,6 +685,9 @@
     }
     function renderList(items) {
       const q = input.value.trim();
+      rows.length = 0; // 기존 데이터 초기화
+      rows.push(...items); // 새 데이터 삽입
+      
       postList.innerHTML = items.map((item) => {
         let html = `
         <tr data-no="${item.no}" data-type="${item.type || 'normal'}" data-deleted="${item.deleted ? '1' : '0'}">
@@ -750,6 +753,7 @@
       const data = await res.json();
       setPagination(page, data);
       renderList(data.items || []);
+      syncCount(data.items ? data.items.length : 0);
       if (!skipPush) {
         history.pushState(null, '', `/list/${gallId}?page=${page}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
       }

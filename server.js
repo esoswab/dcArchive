@@ -712,11 +712,12 @@ async function handleApi(parsed, res) {
     const sm = parsed.query.sm || "all";
 
     try {
-      // 1페이지일 때는 실시간 동기화 병행
+      // 1페이지일 때는 실시간 동기화 병행 (백그라운드에서 진행하여 API 응답 지연 방지)
       if (page === "1" && !q && mode === "all") {
-        const html = await fetchText(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`, SOURCE + '/');
-        const list = parseList(html);
-        await mergeCacheFromList(1, list);
+        fetchText(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`, SOURCE + '/').then(html => {
+          const list = parseList(html);
+          mergeCacheFromList(1, list); // await 생략
+        }).catch(e => console.error("[Background Sync Error]", e.message));
       }
 
       const result = await dbMgr.getList({ mode, page, q, sm });
