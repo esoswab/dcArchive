@@ -553,15 +553,14 @@ function parsePost(html, url) {
   // 본문 추출 고도화: 중첩된 div 구조에서도 끝까지 긁어오도록 개선
   let bodyH = "";
   const patterns = [
-    // 1. 최신/마이너 갤러리 표준: 하단 마커를 기준으로 통째로 긁음
-    /class="[^"]*(?:write_div|writing_view_box|gallery_view_contents)[^"]*"[^>]*>([\s\S]+?)(?=<div class="comm_modi"|<div class="report_btn"|<div class="comment_wrap"|<div class="btn_report_box"|<div class="bottom_answer"|<div class="view_comment"|<div class="all_reply"|<script|<!--|$)/i,
-    // 2. 백업: 단순 클래스 기반 매칭
-    /<div[^>]*class="write_div"[\s\S]*?>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="writing_view_box"[\s\S]*?>([\s\S]*?)<\/div>/i,
-    // 3. [추가] 이미지 없는 텍스트 전용 글에 쓰이는 구조 대응
-    /<div[^>]*class="[^"]*gallery_view_contents[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<section[^>]*class="[^"]*article_body[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
-    /<div[^>]*id="[^"]*article[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    // 핵심: write_div의 시작 태그(모든 속성 허용) ~ 하단 마커 사이를 통째로 캡처
+    /<div[^>]+class="[^"]*write_div[^"]*"[^>]*>([\s\S]+?)(?=<div[^>]*class="comm_modi"|<div[^>]*class="report_btn"|<div[^>]*class="comment_wrap"|<div[^>]*class="all_reply"|<\/div>\s*<\/div>\s*<\/div>\s*<div[^>]*class="[^"]*view_bottom|<script\b)/i,
+    // 백업 1: writing_view_box
+    /<div[^>]+class="[^"]*writing_view_box[^"]*"[^>]*>([\s\S]+?)(?=<div[^>]*class="comm_modi"|<div[^>]*class="comment_wrap"|<script\b)/i,
+    // 백업 2: gallery_view_contents
+    /<div[^>]+class="[^"]*gallery_view_contents[^"]*"[^>]*>([\s\S]+?)(?=<div[^>]*class="comm_modi"|<div[^>]*class="comment_wrap"|<script\b)/i,
+    // 최후 수단: write_div 시작 ~ 끝
+    /<div[^>]+class="[^"]*write_div[^"]*"[^>]*>([\s\S]+)/i,
   ];
 
   for (const p of patterns) {
