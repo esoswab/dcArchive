@@ -368,8 +368,8 @@ async function postJson(url, body, extraHeaders = {}, retries = 3) {
 function firstMatch(html, res) { for (const re of res) { const m = html.match(re); if (m) return m[1]; } return ""; }
 function extractImageUrls(html, baseUrl) {
   const urls = new Set();
-  // src, data-original, data-src 속성을 모두 탐색합니다.
-  const re = /<img[^>]*(?:src|data-original|data-src)="([^"]+)"/gi;
+  // src, data-original, data-src 속성을 모두 탐색합니다 (따옴표 종류 상관없이)
+  const re = /<img[^>]*(?:src|data-original|data-src|data-src|data-original)\s*=\s*["']([^"']+)["']/gi;
   let m;
   while ((m = re.exec(html))) {
     const u = m[1];
@@ -1011,8 +1011,8 @@ async function processItem(item, referer = SOURCE + '/') {
           const decodedImg = decodeEntities(img);
           const escapedDecoded = decodedImg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           
-          // src, data-original, data-src 등 어떤 속성에 들어있든 해당 태그 전체를 찾아서 교체
-          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src|data-src|data-original)=["'](?:${escapedImg}|${escapedDecoded})["'][^>]*>`, 'gi');
+          // src, data-original, data-src 등 어떤 속성에 들어있든 해당 태그 전체를 찾아서 교체 (따옴표 유연하게)
+          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["'](?:${escapedImg}|${escapedDecoded})["'][^>]*>`, 'gi');
           
           const newTag = `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;" loading="lazy">`;
           
