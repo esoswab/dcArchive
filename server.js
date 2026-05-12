@@ -598,7 +598,29 @@ async function fetchComments(no, page, token, prevComments = []) {
       const data = await postJson(`${SOURCE}/board/comment/`, { id: GALL_ID, no, cmt_id: GALL_ID, cmt_no: no, e_s_n_o: token.eSnO || "", comment_page: cp, sort: "R", board_type: token.boardType || "", _GALLTYPE_: token.gallType || "M" }, { referer: buildDcUrl(no, page) });
       if (!data || !data.comments) break;
       const filteredBatch = data.comments
-        .map(c => ({ name: c.name || "익명", meta: c.reg_date || "", body: decodeEntities(stripTags(c.memo || "")), depth: Number(c.depth || 0) }))
+        .map(c => {
+          let author = c.name || "익명";
+          if (c.ip) author += `(${c.ip})`;
+          
+          // 아이콘 판별
+          let icon = "";
+          if (c.user_id) {
+             // 고닉/반고닉 아이콘 (기본적으로 s, g, f, m 등으로 매칭)
+             // DC API에서는 보통 회원의 등급 정보를 숫자로 주기도 합니다.
+             if (c.is_manager === 'G') icon = 'g';
+             else if (c.is_manager === 'M') icon = 'm';
+             else if (c.user_id) icon = 's'; // 일반 고닉/반고닉
+          }
+
+          return { 
+            name: author, 
+            uid: c.user_id || "",
+            icon: icon,
+            meta: c.reg_date || "", 
+            body: decodeEntities(stripTags(c.memo || "")), 
+            depth: Number(c.depth || 0) 
+          };
+        })
         .filter(c => c.name.trim() !== "댓글돌이");
       newComments.push(...filteredBatch);
       if (newComments.length >= Number(data.total_cnt || 0)) break;

@@ -809,7 +809,18 @@
     function renderComments(comments) {
       const filtered = comments.filter(c => (c.name || '').trim() !== '댓글돌이');
       commentList.innerHTML = filtered.length
-        ? filtered.map((c) => `<div class="comment" style="margin-left:${Math.min(24, (c.depth || 0) * 14)}px"><div><div class="name">${c.name || '익명'}</div><p class="meta">${c.meta || ''}</p></div><p>${c.body || ''}</p></div>`).join('')
+        ? filtered.map((c) => `
+          <div class="comment" style="margin-left:${Math.min(24, (c.depth || 0) * 14)}px">
+            <div>
+              <div class="name">
+                ${c.name || '익명'} 
+                ${c.uid ? `<small style="opacity:0.6; font-size:10px; font-weight:400; margin-left:4px;">(${c.uid})</small>` : ''}
+                ${userIcon(c.icon)}
+              </div>
+              <p class="meta">${c.meta || ''}</p>
+            </div>
+            <p>${c.body || ''}</p>
+          </div>`).join('')
         : '<div class="comment"><div><div class="name">댓글 없음</div><p class="meta">-</p></div><p>수집된 댓글이 없습니다.</p></div>';
     }
     function renderImages(images) {
