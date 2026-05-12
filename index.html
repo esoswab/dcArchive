@@ -812,10 +812,9 @@
         ? filtered.map((c) => `
           <div class="comment" style="margin-left:${Math.min(24, (c.depth || 0) * 14)}px">
             <div>
-              <div class="name">
-                ${c.name || '익명'} 
-                ${c.uid ? `<small style="opacity:0.6; font-size:10px; font-weight:400; margin-left:4px;">(${c.uid})</small>` : ''}
-                ${userIcon(c.icon)}
+              <div class="name" style="margin-bottom: 2px;">
+                ${c.name || '익명'} ${userIcon(c.icon)}
+                ${c.uid ? `<div style="opacity:0.5; font-size:10px; font-weight:400; margin-top:1px;">${c.uid}</div>` : ''}
               </div>
               <p class="meta">${c.meta || ''}</p>
             </div>
