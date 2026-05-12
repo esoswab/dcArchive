@@ -874,7 +874,7 @@ async function handleApi(parsed, res) {
   if (parsed.pathname === "/api/media-all") {
     try {
       // 각 이미지가 몇 개의 게시글에서 참조되는지 함께 가져옵니다.
-      const list = await dbMgr.all(`
+      const list = await dbMgr.query(`
         SELECT path, originalHash as hash, COUNT(*) as refCount 
         FROM images 
         GROUP BY originalHash 
