@@ -1026,22 +1026,36 @@ async function processItem(item, referer = SOURCE + '/') {
           // 이 방식이 속성 순서나 따옴표 종류, 추가 속성 유무에 상관없이 가장 확실합니다.
           const decodedImg = decodeEntities(img);
           
-          // 1. 원본 형태 치환
-          contentHtml = contentHtml.split(img).join(localInfo.path);
-          // 2. 디코딩된 형태 치환 (&amp; -> &)
-          if (img !== decodedImg) {
+          // [중요] 반드시 &amp; 형태를 먼저 치환한 후 & 형태를 치환해야 'amp;'가 남는 것을 방지할 수 있습니다.
+          if (img.includes('&amp;')) {
+            contentHtml = contentHtml.split(img).join(localInfo.path);
             contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
+          } else {
+            contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
+            contentHtml = contentHtml.split(img).join(localInfo.path);
           }
           
-          // [수정] 태그 강제 변환 없이 스타일만 보정 (사용자 요청 반영)
+          // [추가] 동영상 태그 복원 로직: 
+          // 만약 디시에서 <video>로 줬는데 우리가 .webp(이미지)로 저장했다면, 
+          // <video>...</video> 전체를 찾아내어 안의 이미지만 남기고 태그를 제거합니다.
+          if (localInfo.path.endsWith('.webp')) {
+            const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // <video> 태그 블록 전체를 찾아서 <img> 태그 하나로 교체
+            const videoBlockRe = new RegExp(`<video[^>]*>[\\s\\S]*?src=["']${escapedPath}["'][\\s\\S]*?<\\/video>|<video[^>]+src=["']${escapedPath}["'][^>]*>(?:<\\/video>)?`, 'gi');
+            contentHtml = contentHtml.replace(videoBlockRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
+            
+            // 혹시라도 <source> 태그만 남은 경우도 청소
+            const sourceTagRe = new RegExp(`<source[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
+            contentHtml = contentHtml.replace(sourceTagRe, '');
+          }
+
+          // 일반 이미지 스타일 보정
           const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const fixRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
           contentHtml = contentHtml.replace(fixRe, (match) => {
              if (match.includes('style=')) return match;
              return match.replace('<img', '<img style="max-width:100%; display:block; margin:10px 0; border-radius:8px;"');
           });
-          
-          // 만약 원본이 video 태그였다면 주소만 치환된 상태로 유지됨 (자연스러움)
           
         } else if (localInfo && localInfo.path === "blocked") {
           // 차단된 이미지는 태그를 찾아서 안내 문구로 교체해야 함
