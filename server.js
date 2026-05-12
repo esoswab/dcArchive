@@ -575,9 +575,11 @@ function parsePost(html, url) {
   const eSnO = firstMatch(html, [/id="e_s_n_o"[^>]*value="([^"]*)"/i, /name="e_s_n_o"[^>]*value="([^"]*)"/i]);
   const boardType = firstMatch(html, [/id="board_type"[^>]*value="([^"]*)"/i, /name="board_type"[^>]*value="([^"]*)"/i]);
   const gallType = firstMatch(html, [/id="_GALLTYPE_"[^>]*value="([^"]*)"/i, /name="_GALLTYPE_"[^>]*value="([^"]*)"/i]);
-  // 데이터 검증: 제목이 유효하고 본문이나 이미지가 하나라도 있으면 통과
+  // 데이터 검증: 제목이 있거나 본문/이미지가 있으면 통과 (이미지 없는 텍스트 글도 수집)
   const finalTitle = title || "제목 없음";
-  const isValid = (finalTitle !== "상세 페이지" && finalTitle !== "제목 없음") && (rawText.length > 0 || images.length > 0 || bodyH.length > 0);
+  const hasContent = rawText.length > 0 || images.length > 0 || bodyH.length > 0;
+  const hasTitle = finalTitle !== "상세 페이지";
+  const isValid = hasTitle && hasContent;
 
   return {
     url, title: finalTitle, author, authorIcon, uid, date, views, likes, commentCount,
@@ -806,7 +808,7 @@ async function handleApi(parsed, res) {
     try {
       let post = await dbMgr.getPost(no);
       // 만약 DB에 없거나 내용이 부실하거나 업데이트가 필요하면 실시간 수집
-      if (!post || !post.rawText || (Date.now() - (post.updatedAt || 0) > 10 * 60 * 1000)) {
+      if (!post || (!post.rawText && !post.contentHtml) || (Date.now() - (post.updatedAt || 0) > 10 * 60 * 1000)) {
         const url = buildDcUrl(no, parsed.query.page);
         // processItem을 호출하여 수집/변환/저장 로직을 일원화
         await processItem({ no, href: url, page: parsed.query.page || 1 }, SOURCE + '/');
