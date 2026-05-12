@@ -1048,9 +1048,7 @@ async function processItem(item, referer = SOURCE + '/') {
   const no = item.no;
   try {
     const html = await fetchText(item.href, referer);
-
-    // 🚨 본문 키워드 기반 삭제 감지 (리다이렉트되지 않은 경우)
-    if (html.includes("삭제된 게시글입니다") || html.includes("존재하지 않는 게시물입니다") || html.includes("잘못된 접근입니다")) {
+      if (html.includes("삭제된 게시글입니다") || html.includes("존재하지 않는 게시물입니다") || html.includes("잘못된 접근입니다")) {
       const prev = await dbMgr.getPost(no);
       await dbMgr.savePost(Object.assign({}, prev || {}, item, {
         category: '삭제글', deleted: 1, updatedAt: Date.now(), archivedAt: (prev && prev.archivedAt) || Date.now()
@@ -1118,44 +1116,41 @@ async function processItem(item, referer = SOURCE + '/') {
       }
       merged.localImages = cached.map((path, idx) => ({ path, originalHash: hashes[idx] }));
 
-      // [강력 수정] HTML 내의 이미지를 로컬 캐시 주소로 완벽하게 치환합니다.
-      post.images.forEach((img, idx) => {
-        const localInfo = merged.localImages[idx];
-        if (localInfo && localInfo.path && localInfo.path !== "blocked") {
-          // 태그를 복잡하게 찾는 대신, 본문 내의 모든 해당 URL을 로컬 경로로 단순 치환합니다.
-          // 이 방식이 속성 순서나 따옴표 종류, 추가 속성 유무에 상관없이 가장 확실합니다.
-          const decodedImg = decodeEntities(img);
-
-          // [중요] 반드시 &amp; 형태를 먼저 치환한 후 & 형태를 치환해야 'amp;'가 남는 것을 방지할 수 있습니다.
-          if (img.includes('&amp;')) {
-            contentHtml = contentHtml.split(img).join(localInfo.path);
-            contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
-          } else {
-            contentHtml = contentHtml.split(decodedImg).join(localInfo.path);
-            contentHtml = contentHtml.split(img).join(localInfo.path);
+      // [강력 수정] 이미지 태그 로컬 경로로 치환 (순서 기반 강제 매칭 포함)
+      if (post.images && post.images.length > 0) {
+        // 1. 먼저 정밀 치환 (URL 기반)
+        post.images.forEach((img, idx) => {
+          const localPath = merged.localImages[idx]?.path;
+          if (localPath && localPath !== "blocked") {
+            const decodedImg = decodeEntities(img);
+            contentHtml = contentHtml.split(img).join(localPath);
+            contentHtml = contentHtml.split(decodedImg).join(localPath);
           }
+        });
 
-          // [추가] 동영상 태그 복원 로직: 
-          // 만약 디시에서 <video>로 줬는데 우리가 .webp(이미지)로 저장했다면, 
-          // <video>...</video> 전체를 찾아내어 안의 이미지만 남기고 태그를 제거합니다.
-          if (localInfo.path.endsWith('.webp')) {
+        // 2. [보강] 아직 치환되지 않은 외부 이미지가 있다면, 저장된 로컬 이미지와 순서대로 강제 매칭
+        // (주소 뒤에 붙은 ?t= 파라미터 등이 달라져서 치환에 실패한 경우를 구제)
+        let localIdx = 0;
+        contentHtml = contentHtml.replace(/<img[^>]+(?:src|data-original|data-src)=["'](https?:\/\/[^"']+)["'][^>]*>/gi, (match, src) => {
+          if (src.includes('duckdns.org') || src.includes('/media/')) return match; // 이미 로컬 주소임
+          if (localIdx < merged.localImages.length) {
+            const localPath = merged.localImages[localIdx++].path;
+            if (localPath && localPath !== "blocked") {
+              return `<img src="${localPath}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`;
+            }
+          }
+          return match;
+        });
+
+        // 3. [보정] 동영상 태그가 이미지(.webp)를 감싸고 있는 경우 청소
+        merged.localImages.forEach(localInfo => {
+          if (localInfo && localInfo.path && localInfo.path.endsWith('.webp')) {
             const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // <video> 태그 블록 전체를 찾아서 <img> 태그 하나로 교체
             const videoBlockRe = new RegExp(`<video[^>]*>[\\s\\S]*?src=["']${escapedPath}["'][\\s\\S]*?<\\/video>|<video[^>]+src=["']${escapedPath}["'][^>]*>(?:<\\/video>)?`, 'gi');
             contentHtml = contentHtml.replace(videoBlockRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
-
-            // 혹시라도 <source> 태그만 남은 경우도 청소
-            const sourceTagRe = new RegExp(`<source[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
-            contentHtml = contentHtml.replace(sourceTagRe, '');
           }
-
-          // 일반 이미지 스타일 보정
-          const escapedPath = localInfo.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const fixRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
-          contentHtml = contentHtml.replace(fixRe, (match) => {
-            if (match.includes('style=')) return match;
-            return match.replace('<img', '<img style="max-width:100%; display:block; margin:10px 0; border-radius:8px;"');
-          });
+        });
+      }
 
         } else if (localInfo && localInfo.path === "blocked") {
           // 차단된 이미지는 태그를 찾아서 안내 문구로 교체해야 함
