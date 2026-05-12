@@ -709,16 +709,18 @@
       });
       applyFilter();
     }
-    async function loadPage(page) {
+    async function loadPage(page, skipPush = false) {
       resultCount.textContent = '불러오는 중...';
       const sm = searchModeSelect.value;
       const res = await fetch(`/api/list?page=${encodeURIComponent(page)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
       const data = await res.json();
       setPagination(page, data);
       renderList(data.items || []);
-      history.replaceState(null, '', `/list/${gallId}?page=${page}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
+      if (!skipPush) {
+        history.pushState(null, '', `/list/${gallId}?page=${page}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
+      }
     }
-    async function openPost(no, page) {
+    async function openPost(no, page, skipPush = false) {
       showArticle();
       postTitle.textContent = '불러오는 중...';
       postBody.textContent = '본문을 불러오는 중입니다.';
@@ -805,8 +807,28 @@
         };
       }
       renderComments(data.comments || []);
-      history.replaceState(null, '', `/view/${gallId}/${no}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
+      if (!skipPush) {
+        history.pushState(null, '', `/view/${gallId}/${no}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
+      }
     }
+    
+    window.onpopstate = () => {
+      const qs = new URLSearchParams(location.search);
+      currentPage = Number(qs.get('page')) || 1;
+      currentMode = qs.get('mode') || 'all';
+      currentQuery = qs.get('q') || '';
+      input.value = currentQuery;
+      
+      modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === currentMode));
+      
+      if (location.pathname.includes('/view/')) {
+        const no = location.pathname.split('/').pop();
+        openPost(no, currentPage, true);
+      } else {
+        showList();
+        loadPage(currentPage, true);
+      }
+    };
 
     let searchTimer = null;
     const triggerSearch = () => {
@@ -833,13 +855,9 @@
     });
     document.getElementById('backToList').addEventListener('click', (e) => {
       e.preventDefault();
-      currentPage = 1;
-      currentMode = 'all';
-      currentQuery = '';
-      input.value = '';
-      modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === 'all'));
       showList();
-      loadPage(1);
+      // 이전에 보던 상태 그대로 유지 (loadPage를 다시 부르지 않아도 이미 렌더링된 상태)
+      history.pushState(null, '', `/list/${gallId}?page=${currentPage}&mode=${currentMode}&q=${encodeURIComponent(currentQuery)}`);
     });
 
     async function updateStorageStats() {

@@ -177,10 +177,19 @@ async function cacheImage(url, referer) {
       res.on('end', async () => {
         try {
           const buf = Buffer.concat(chunks);
-          await sharp(buf)
+          const image = sharp(buf);
+          const metadata = await image.metadata();
+          
+          // 움짤(애니메이션) 처리 지원
+          const isAnimated = metadata.pages > 1;
+          
+          let pipeline = isAnimated ? sharp(buf, { animated: true }) : image;
+          
+          await pipeline
             .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 60 })
+            .webp({ quality: 60, animated: isAnimated })
             .toFile(outPath);
+            
           resolve('/media/' + hash + '.webp');
         } catch (e) { reject(e); }
       });
