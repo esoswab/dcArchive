@@ -376,7 +376,8 @@ function extractImageUrls(html, baseUrl) {
     // 로딩용 임시 이미지는 건너뜁니다.
     if (u.includes("gallview_loading_ori.gif")) continue;
 
-    if (u.indexOf("dcimg") >= 0 || u.indexOf("dcinside.com/viewimage.php") >= 0) {
+    if (u.includes("dcimg") || u.includes("dcinside.com/viewimage.php") || u.includes("dcinside.com/mgallery/board/view")) {
+      // 엔티티가 섞여있을 수 있으므로 가급적 원본 형태 유지 (치환 시 매칭을 위해)
       urls.add(u.startsWith("http") ? u : urlLib.resolve(baseUrl, u));
     }
   }
@@ -1003,15 +1004,32 @@ async function processItem(item, referer = SOURCE + '/') {
       // [강력 수정] HTML 내의 이미지를 로컬 캐시 주소로 완벽하게 치환합니다.
       post.images.forEach((img, idx) => {
         const localInfo = merged.localImages[idx];
-        if (localInfo && localInfo.path) {
+        if (localInfo && localInfo.path && localInfo.path !== "blocked") {
+          // 1. 원본 형태 그대로 치환 시도
           const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["']${escapedImg}["'][^>]*>`, 'gi');
-
-          if (localInfo.path === "blocked") {
-            contentHtml = contentHtml.replace(imgTagRe, `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`);
+          // 2. 엔티티 디코딩된 형태도 준비 (&amp; -> &)
+          const decodedImg = decodeEntities(img);
+          const escapedDecoded = decodedImg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          
+          // src, data-original, data-src 등 어떤 속성에 들어있든 해당 태그 전체를 찾아서 교체
+          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src|data-src|data-original)=["'](?:${escapedImg}|${escapedDecoded})["'][^>]*>`, 'gi');
+          
+          const newTag = `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;" loading="lazy">`;
+          
+          if (imgTagRe.test(contentHtml)) {
+             contentHtml = contentHtml.replace(imgTagRe, newTag);
           } else {
-            contentHtml = contentHtml.replace(imgTagRe, `<img src="${localInfo.path}" style="max-width:100%; display:block; margin:10px 0; border-radius:8px;">`);
+             // 태그 전체 매칭에 실패하면 URL 문자열만이라도 강제 치환 (속성 내부에 있는 것)
+             const urlRe = new RegExp(`(["'])(?:${escapedImg}|${escapedDecoded})\\1`, 'g');
+             contentHtml = contentHtml.replace(urlRe, `$1${localInfo.path}$1`);
           }
+        } else if (localInfo && localInfo.path === "blocked") {
+          const escapedImg = img.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const decodedImg = decodeEntities(img);
+          const escapedDecoded = decodedImg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const imgTagRe = new RegExp(`<img[^>]+(?:src|data-original|data-src)=["'](?:${escapedImg}|${escapedDecoded})["'][^>]*>`, 'gi');
+          const blockTag = `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">차단된 이미지입니다.</div>`;
+          contentHtml = contentHtml.replace(imgTagRe, blockTag);
         }
       });
 
