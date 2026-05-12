@@ -553,9 +553,10 @@ function parsePost(html, url) {
   // 본문 추출 고도화: 중첩된 div 구조에서도 끝까지 긁어오도록 개선
   let bodyH = "";
   const patterns = [
-    // 1. 더 넓은 범위 매칭: 특정 클래스 시작부터 댓글/수정 버튼/끝 표시 전까지 최대한 긁음
-    /<div[^>]*class="[^"]*(?:write_div|writing_view_box)[^"]*"[^>]*>([\s\S]*?)(?:<div class="comm_modi"|<div class="report_btn"|<div class="comment_wrap"|<script|<!--|$)/i,
-    // 2. 백업: 기존 방식
+    // 1. 최신/마이너 갤러리 표준: 본문 시작(write_div 등)부터 하단 섹션(댓글/신고/수정 등) 시작 전까지 통째로 긁음
+    // 중첩된 <div> 구조에 대응하기 위해 비탐욕적 매칭(?*)이 아닌, 하단 마커를 기준으로 매칭합니다.
+    /<div[^>]*class="[^"]*(?:write_div|writing_view_box|gallery_view_contents)[^"]*"[^>]*>([\s\S]+?)(?=<div class="comm_modi"|<div class="report_btn"|<div class="comment_wrap"|<div class="btn_report_box"|<div class="bottom_answer"|<div class="view_comment"|<div class="all_reply"|<script|<!--|$)/i,
+    // 2. 백업: 단순 클래스 기반 매칭
     /<div[^>]*class="write_div"[\s\S]*?>([\s\S]*?)<\/div>/i,
     /<div[^>]*class="writing_view_box"[\s\S]*?>([\s\S]*?)<\/div>/i
   ];
