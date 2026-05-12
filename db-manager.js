@@ -225,12 +225,17 @@ async function savePost(post) {
 }
 
 async function getPost(no) {
-  const post = db.prepare(`SELECT * FROM posts WHERE no = ?`).get(no);
+  // 병렬 쿼리로 속도 최적화
+  const [post, comments, imgs] = await Promise.all([
+    db.prepare(`SELECT * FROM posts WHERE no = ?`).get(no),
+    db.prepare(`SELECT name, meta, body, depth FROM comments WHERE postNo = ? ORDER BY id ASC`).all(no),
+    db.prepare(`SELECT path FROM images WHERE postNo = ? ORDER BY id ASC`).all(no)
+  ]);
+
   if (!post) return null;
 
   post.deleted = !!post.deleted;
-  post.comments = db.prepare(`SELECT name, meta, body, depth FROM comments WHERE postNo = ? ORDER BY id ASC`).all(no);
-  const imgs = db.prepare(`SELECT path FROM images WHERE postNo = ? ORDER BY id ASC`).all(no);
+  post.comments = comments;
   post.localImages = imgs.map(i => i.path);
 
   return post;

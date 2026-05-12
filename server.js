@@ -6,6 +6,7 @@ const https = require("https");
 const urlLib = require("url");
 const crypto = require("crypto");
 const sharp = require("sharp");
+const zlib = require("zlib");
 
 // ── 설정 및 상수 ───────────────────────────────────────────
 const PORT = process.env.PORT || 1557;
@@ -642,10 +643,27 @@ async function mergeCacheFromList(page, list) {
   }
 }
 
-function send(res, code, body, type = "text/plain") {
+function send(res, code, data, type = "text/plain") {
   if (res.writableEnded) return;
-  res.writeHead(code, { "Content-Type": type });
-  res.end(body);
+  
+  let payload = data;
+  let headers = { 
+    "Content-Type": type.includes("charset") ? type : type + "; charset=utf-8",
+    "Access-Control-Allow-Origin": "*"
+  };
+
+  // 1KB 이상의 텍스트/JSON 데이터는 Gzip 압축 처리
+  if (data && data.length > 1024 && (type.includes("text") || type.includes("json"))) {
+    try {
+      payload = zlib.gzipSync(Buffer.from(data));
+      headers["Content-Encoding"] = "gzip";
+    } catch (e) {
+      payload = data;
+    }
+  }
+
+  res.writeHead(code, headers);
+  res.end(payload);
 }
 
 async function handleApi(parsed, res) {
