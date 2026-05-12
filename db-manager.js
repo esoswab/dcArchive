@@ -408,6 +408,12 @@ const run = async (sql, params = []) => db.prepare(sql).run(params);
 const get = async (sql, params = []) => db.prepare(sql).get(params);
 const query = async (sql, params = []) => db.prepare(sql).all(params);
 
+async function getPathByHash(hash) {
+  if (!hash) return null;
+  const row = db.prepare(`SELECT path FROM images WHERE originalHash = ? LIMIT 1`).get(hash);
+  return row ? row.path : null;
+}
+
 async function isBlacklisted(hash) {
   if (!hash) return false;
   const row = db.prepare(`SELECT 1 FROM blacklisted_images WHERE hash = ?`).get(hash);
@@ -428,6 +434,7 @@ module.exports = {
   query,
   run,
   get,
+  getPathByHash,
   isBlacklisted,
   blacklistImage,
   db

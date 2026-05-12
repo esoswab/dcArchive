@@ -157,11 +157,15 @@ function jitterWait(min, max) {
 
 // ── 이미지 로컬 캐싱 ─────────────────────────────────────────
 async function cacheImage(url, referer) {
-  const hash = require('crypto').createHash('md5').update(url).digest('hex');
-  const outPath = path.join(MEDIA_DIR, hash + '.webp');
+  const urlHash = require('crypto').createHash('md5').update(url).digest('hex');
+  const outPath = path.join(MEDIA_DIR, urlHash + '.webp');
+  const localUrlPath = '/media/' + urlHash + '.webp';
   
-  // 이미 캐시된 경우라도 DB에서 해시 정보를 가져오기 위해 객체 반환 고려 (여기서는 단순화)
-  if (fs.existsSync(outPath)) return { path: '/media/' + hash + '.webp', originalHash: '' }; 
+  // 1. 이미 동일 URL로 캐시된 경우 (빠른 반환)
+  if (fs.existsSync(outPath)) {
+    const existing = await dbMgr.get(`SELECT originalHash FROM images WHERE path = ? LIMIT 1`, [localUrlPath]);
+    return { path: localUrlPath, originalHash: (existing && existing.originalHash) || '' }; 
+  }
 
   return new Promise((resolve, reject) => {
     const profile = USER_PROFILES[Math.floor(Math.random() * USER_PROFILES.length)];
@@ -188,6 +192,17 @@ async function cacheImage(url, referer) {
             return;
           }
 
+          // 2. [중복 필터] 동일 내용의 이미지가 다른 이름으로 이미 저장되어 있는지 확인
+          const dupPath = await dbMgr.getPathByHash(originalHash);
+          if (dupPath) {
+            const fullDupPath = path.join(MEDIA_DIR, path.basename(dupPath));
+            if (fs.existsSync(fullDupPath)) {
+              console.log(`[Dedupe] 중복 이미지 발견, 기존 파일 재사용 (Hash: ${originalHash})`);
+              resolve({ path: dupPath, originalHash });
+              return;
+            }
+          }
+
           const image = sharp(buf);
           const metadata = await image.metadata();
           
@@ -200,7 +215,7 @@ async function cacheImage(url, referer) {
             .webp({ quality: 60, animated: isAnimated })
             .toFile(outPath);
             
-          resolve({ path: '/media/' + hash + '.webp', originalHash });
+          resolve({ path: localUrlPath, originalHash });
         } catch (e) { reject(e); }
       });
       res.on('error', reject);
