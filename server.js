@@ -13,10 +13,33 @@ const PORT = process.env.PORT || 1557;
 const SOURCE = "https://gall.dcinside.com";
 const NOTIFICATION_URL = process.env.NOTIFICATION_URL;
 
-// [갤러리 설정 프리셋]
-const GALL_ID = process.env.GALL_ID || "vr";
-const GALL_NAME = process.env.GALL_NAME || "브이알챗";
-const GALL_TYPE = process.env.GALL_TYPE || "mgallery"; // 일반갤: board, 마이너갤: mgallery
+// [갤러리 통합 설정] - 앞으로 여기에 추가만 하면 자동으로 확장됩니다.
+const GALLERIES = {
+  "vr": { 
+    id: "vr", 
+    name: "브이알챗", 
+    type: "mgallery", 
+    dbFile: "archive.db" 
+  },
+  "nevernesstoeverness": { 
+    id: "nevernesstoeverness", 
+    name: "네버네스 투 에버네스", 
+    type: "mgallery", 
+    dbFile: "archive_nte.db" 
+  }
+};
+
+const GalleryDB = require("./db-manager");
+const dbManagers = {};
+
+async function initAllDatabases() {
+  for (const key in GALLERIES) {
+    const config = GALLERIES[key];
+    dbManagers[key] = new GalleryDB(config.dbFile);
+    await dbManagers[key].init();
+    console.log(`[System] ${config.name} (${key}) DB 초기화 완료`);
+  }
+}
 
 async function sendAlert(msg) {
   if (!NOTIFICATION_URL) return;
@@ -24,100 +47,15 @@ async function sendAlert(msg) {
     await fetch(NOTIFICATION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: `[DC Archive Alert] ${msg}` })
-    });
-  } catch (e) { console.error("[Alert Failed]", e.message); }
-}
-
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-
-// ── 디스코드 봇 (커맨드 센터) ──────────────────────────────
-let discordClient = null;
-try {
-  const { Client, GatewayIntentBits } = require('discord.js');
-  discordClient = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-
-  discordClient.on('ready', () => {
-    console.log(`[Discord] 봇 로그인 성공: ${discordClient.user.tag}`);
-    sendAlert("✅ 서버 및 디스코드 봇이 가동되었습니다. 이제 디코에서 명령어를 사용하실 수 있습니다.");
-  });
-
-  discordClient.on('messageCreate', async (msg) => {
-    if (msg.author.bot) return;
-    if (!msg.content.startsWith('!')) return;
-
-    const args = msg.content.slice(1).split(' ');
-    const command = args.shift().toLowerCase();
-
-    if (command === '상태') {
-      const stats = await dbMgr.get("SELECT COUNT(*) as total, SUM(CASE WHEN deleted=1 THEN 1 ELSE 0 END) as deleted FROM posts");
-      msg.reply(`📊 **아카이브 현황**\n- 전체 게시글: ${stats.total}개\n- 삭제된 글: ${stats.deleted}개\n- IP 차단 상태: ${isIpThrottled ? '🔴 차단됨' : '🟢 정상'}`);
-    }
-
-    if (command === '감시' && args[0]) {
-      const no = args[0];
-      if (!WATCH_LIST.includes(no)) {
-        WATCH_LIST.push(no);
-        saveWatchList();
-        msg.reply(`⭐ 글 번호 **${no}**를 감시 목록에 추가했습니다.`);
-        processItem({ no, href: buildDcUrl(no, 1), type: 'notice' }, SOURCE + '/').catch(() => { });
-      } else {
-        msg.reply(`이미 감시 중인 글입니다.`);
-      }
-    }
-
-    if (command === '갱신' && args[0]) {
-      const no = args[0];
-      msg.reply(`🔄 글 번호 **${no}** 수동 갱신을 시작합니다...`);
-      await processItem({ no, href: buildDcUrl(no, 1), type: 'notice' }, SOURCE + '/');
-      msg.reply(`✅ 갱신 완료!`);
-    }
-
-    if (command === '시작') {
-      isIpThrottled = false;
-      msg.reply(`🟢 수집을 시작(재개)합니다! 🚀`);
-    }
-
-    if (command === '중지') {
-      isIpThrottled = true;
-      msg.reply(`🛑 수집을 즉시 중단했습니다. (안전 모드)`);
-    }
-
-    if (command === '종료') {
-      await msg.reply(`🛑 서버를 완전히 종료합니다. 다시 켜려면 터미널에서 직접 명령어를 입력해야 합니다. 안녕히 계세요!`);
-      const { exec } = require('child_process');
-      exec('pm2 stop dc'); // PM2에게 직접 중단 명령을 내립니다.
-    }
-
-    if (command === 'ㄱㄷ' || command === '재시작') {
-      await msg.reply(`🔄 서버를 재시작합니다. 잠시만 기다려 주세요...`);
-      console.log("[Discord] 사용자에 의한 강제 재시작 요청");
-      process.exit(0); // PM2가 자동으로 다시 켜줍니다.
-    }
-
-    if (command === '풀기') {
-      isIpThrottled = false;
-      msg.reply(`🟢 IP 차단 모드를 강제로 해제했습니다. 수집을 재개합니다.`);
-    }
-
-    if (command === '도움말' || command === '명령어' || command === 'help') {
-      msg.reply(`🛠️ **명령어 목록**\n- \`!상태\`: 서버 현황 확인\n- \`!감시 [번호]\`: 글 감시 목록 추가\n- \`!갱신 [번호]\`: 글 수동 갱신\n- \`!시작 / !중지\`: 수집 가동/정지\n- \`!ㄱㄷ\`: 서버 재시작\n- \`!종료\`: 서버 완전 종료\n- \`!명령어\`: 이 도움말 보기`);
-    }
-  });
-
-  discordClient.login(DISCORD_TOKEN).catch(e => console.error("[Discord] 봇 로그인 실패:", e.message));
-} catch (e) {
-  console.log("[Discord] discord.js가 설치되지 않아 봇 기능을 건너뜁니다.");
-}
-const CACHE_FILE = "archive-cache.json";
 const MEDIA_DIR = path.join(__dirname, "media-cache");
 const INDEX = path.join(__dirname, "index.html");
 const ERROR_LOG = path.join(__dirname, "error.log");
-const dbMgr = require("./db-manager");
 
 // ── 성능 및 안정성 설정 ─────────────────────────────────────────
 const BEST_REFRESH_LIMIT = 200;    // 주기적 '갱신' 최대 개수 (최신 글 감시 범위 포함)
 const CRAWL_PAGES = 10;           // 기본 크롤링 페이지 수
+const STARTUP_MAX_PAGES = 5;      // 시작 시 체크할 최대 페이지 수
 sharp.cache(false);               // Sharp 메모리 캐시 비활성화 (메모리 누수 방지)
 sharp.concurrency(1);             // 동시 처리 제한 (CPU/RAM 폭증 방지)
 
@@ -125,21 +63,61 @@ sharp.concurrency(1);             // 동시 처리 제한 (CPU/RAM 폭증 방지
 function logError(err, type = "Error") {
   const msg = `[${new Date().toLocaleString()}] [${type}] ${err.stack || err}\n`;
   console.error(msg);
-  fs.appendFileSync(ERROR_LOG, msg);
+  try { fs.appendFileSync(ERROR_LOG, msg); } catch(e) {}
 }
 process.on('uncaughtException', (err) => logError(err, "UncaughtException"));
 process.on('unhandledRejection', (reason) => logError(reason, "UnhandledRejection"));
 
-// [DB 초기화 및 청소]
-(async () => {
-  await dbMgr.init();
-  // 🚨 잘못 분류된 개념글 청소 (추천 0인데 개념글인 경우 일반글로 환원)
-  const result = await dbMgr.run("UPDATE posts SET type = 'normal' WHERE type = 'best' AND likes = 0");
-  if (result.changes > 0) console.log(`[System] 잘못 분류된 개념글 ${result.changes}개를 일반글로 복구했습니다.`);
-  console.log('[System] 데이터베이스 연결 및 초기화 완료');
-})();
+// ── 디스코드 봇 (커맨드 센터) ──────────────────────────────
+let discordClient = null;
+if (DISCORD_TOKEN) {
+  try {
+    const { Client, GatewayIntentBits } = require('discord.js');
+    discordClient = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
+    discordClient.on('ready', () => {
+      console.log(`[Discord] 봇 로그인 성공: ${discordClient.user.tag}`);
+      sendAlert("✅ 서버 및 디스코드 봇이 가동되었습니다.");
+    });
+
+    discordClient.on('messageCreate', async (msg) => {
+      if (msg.author.bot || !msg.content.startsWith('!')) return;
+
+      const args = msg.content.slice(1).split(' ');
+      const command = args.shift().toLowerCase();
+      const defaultGall = "vr";
+      const dbMgr = dbManagers[defaultGall];
+      if (!dbMgr) return;
+
+      if (command === '상태') {
+        const stats = await dbMgr.get("SELECT COUNT(*) as total, SUM(CASE WHEN deleted=1 THEN 1 ELSE 0 END) as deleted FROM posts");
+        msg.reply(`📊 **[${defaultGall}] 아카이브 현황**\n- 전체 게시글: ${stats.total}개\n- 삭제된 글: ${stats.deleted}개\n- IP 차단 상태: ${isIpThrottled ? '🔴 차단됨' : '🟢 정상'}`);
+      }
+      if (command === '감시' && args[0]) {
+        const no = args[0];
+        const watchList = WATCH_LISTS[defaultGall] || [];
+        if (!watchList.includes(no)) {
+          watchList.push(no); WATCH_LISTS[defaultGall] = watchList; saveWatchList(defaultGall);
+          msg.reply(`⭐ [${defaultGall}] 글 번호 **${no}**를 감시 목록에 추가했습니다.`);
+          processItem(dbMgr, defaultGall, { no, href: buildDcUrl(defaultGall, no, 1), type: 'notice' }, SOURCE + '/').catch(() => { });
+        } else msg.reply(`이미 감시 중인 글입니다.`);
+      }
+      if (command === '갱신' && args[0]) {
+        const no = args[0]; msg.reply(`🔄 **${no}** 수동 갱신 시작...`);
+        await processItem(dbMgr, defaultGall, { no, href: buildDcUrl(defaultGall, no, 1), type: 'notice' }, SOURCE + '/');
+        msg.reply(`✅ 갱신 완료!`);
+      }
+      if (command === '시작') { isIpThrottled = false; msg.reply(`🟢 수집 시작!`); }
+      if (command === '중지') { isIpThrottled = true; msg.reply(`🛑 수집 중단!`); }
+      if (command === 'ㄱㄷ' || command === '재시작') { await msg.reply(`🔄 재시작...`); process.exit(0); }
+      if (command === '명령어' || command === 'help') {
+        msg.reply(`🛠️ **명령어**: !상태, !감시 [번호], !갱신 [번호], !시작, !중지, !ㄱㄷ`);
+      }
+    });
+
+    discordClient.login(DISCORD_TOKEN).catch(e => console.error("[Discord] 봇 로그인 실패:", e.message));
+  } catch (e) { console.log("[Discord] 봇 기능 비활성화"); }
+}
 
 // ── 유틸리티 ───────────────────────────────────────────────
 function decodeEntities(text) {
@@ -605,15 +583,17 @@ function parsePost(html, url) {
   };
 }
 
-function buildDcUrl(no, page) {
-  return `${SOURCE}/${GALL_TYPE}/board/view/?id=${GALL_ID}&no=${no}&page=${page || 1}`;
+function buildDcUrl(gallId, no, page) {
+  const gall = GALLERIES[gallId] || GALLERIES["vr"];
+  return `${SOURCE}/${gall.type}/board/view/?id=${gall.id}&no=${no}&page=${page || 1}`;
 }
 
-async function fetchComments(no, page, token, prevComments = []) {
+async function fetchComments(dbMgr, gallId, no, page, token, prevComments = []) {
   const newComments = []; let cp = 1;
+  const gall = GALLERIES[gallId] || GALLERIES["vr"];
   try {
     while (cp <= 10) {
-      const data = await postJson(`${SOURCE}/board/comment/`, { id: GALL_ID, no, cmt_id: GALL_ID, cmt_no: no, e_s_n_o: token.eSnO || "", comment_page: cp, sort: "R", board_type: token.boardType || "", _GALLTYPE_: token.gallType || "M" }, { referer: buildDcUrl(no, page) });
+      const data = await postJson(`${SOURCE}/board/comment/`, { id: gall.id, no, cmt_id: gall.id, cmt_no: no, e_s_n_o: token.eSnO || "", comment_page: cp, sort: "R", board_type: token.boardType || "", _GALLTYPE_: token.gallType || "M" }, { referer: buildDcUrl(gallId, no, page) });
       if (!data || !data.comments) break;
       const filteredBatch = data.comments
         .map(c => {
@@ -673,7 +653,7 @@ async function fetchComments(no, page, token, prevComments = []) {
   });
 }
 
-async function mergeCacheFromList(page, list) {
+async function mergeCacheFromList(dbMgr, gallId, page, list) {
   for (const item of list.items) {
     const prev = await dbMgr.getPost(item.no);
     let finalType = item.type;
@@ -713,25 +693,31 @@ function send(res, code, data, type = "text/plain") {
 }
 
 async function handleApi(parsed, res) {
+  const gallId = parsed.query.gall || "vr";
+  const dbMgr = dbManagers[gallId];
+  if (!dbMgr) return send(res, 404, JSON.stringify({ error: "Invalid gallery ID" }), "application/json");
+
   if (parsed.pathname === "/api/watch-toggle") {
     const no = parsed.query.no;
     if (!no) return send(res, 400, JSON.stringify({ success: false }), "application/json");
 
-    const index = WATCH_LIST.indexOf(no);
+    const watchList = WATCH_LISTS[gallId] || [];
+    const index = watchList.indexOf(no);
     let isWatching = false;
     if (index > -1) {
-      WATCH_LIST.splice(index, 1);
+      watchList.splice(index, 1);
     } else {
-      WATCH_LIST.push(no);
+      watchList.push(no);
       isWatching = true;
     }
-    saveWatchList();
+    WATCH_LISTS[gallId] = watchList;
+    saveWatchList(gallId);
     send(res, 200, JSON.stringify({ success: true, isWatching }), "application/json");
     return true;
   }
   if (parsed.pathname === "/api/watch-status") {
     const no = parsed.query.no;
-    const isWatching = WATCH_LIST.includes(no);
+    const isWatching = (WATCH_LISTS[gallId] || []).includes(no);
     send(res, 200, JSON.stringify({ isWatching }), "application/json");
     return true;
   }
@@ -739,8 +725,7 @@ async function handleApi(parsed, res) {
     const no = parseInt(parsed.query.no);
     if (!no) return send(res, 400, JSON.stringify({ success: false, error: "no is required" }), "application/json");
     try {
-      // processItem을 강제로 호출하여 데이터 갱신
-      await processItem({ no, href: buildDcUrl(no, 1) });
+      await processItem(dbMgr, gallId, { no, href: buildDcUrl(gallId, no, 1) });
       send(res, 200, JSON.stringify({ success: true }), "application/json");
     } catch (e) {
       send(res, 500, JSON.stringify({ success: false, error: e.message }), "application/json");
@@ -749,11 +734,11 @@ async function handleApi(parsed, res) {
   }
   if (parsed.pathname === "/api/refresh") {
     const mode = parsed.query.mode || "all";
-    if (mode === "best" || mode === "all") if (!isRefreshingBest) refreshBestPosts().catch(() => { });
-    if (mode === "crawl" || mode === "all") if (!isCrawling) backgroundCrawl().catch(() => { });
+    if (mode === "best" || mode === "all") refreshBestPosts(dbMgr, gallId).catch(() => { });
+    if (mode === "crawl" || mode === "all") backgroundCrawl(dbMgr, gallId).catch(() => { });
     if (mode === "pages") {
       const count = Math.min(Number(parsed.query.count || 5), 100);
-      backgroundCrawl(count).catch(() => { });
+      backgroundCrawl(dbMgr, gallId, count).catch(() => { });
     }
     send(res, 200, JSON.stringify({ ok: true }), "application/json");
     return true;
@@ -764,18 +749,13 @@ async function handleApi(parsed, res) {
       const cmtStats = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");
 
       let totalSize = 0;
-      let lastHourSize = 0;
-      let lastDaySize = 0;
       const now = Date.now();
-
       if (fs.existsSync(MEDIA_DIR)) {
         const files = fs.readdirSync(MEDIA_DIR);
         for (const file of files) {
           try {
             const fstat = fs.statSync(path.join(MEDIA_DIR, file));
             totalSize += fstat.size;
-            if (now - fstat.mtimeMs < 1000 * 60 * 60) lastHourSize += fstat.size;
-            if (now - fstat.mtimeMs < 1000 * 60 * 60 * 24) lastDaySize += fstat.size;
           } catch (e) { }
         }
       }
@@ -785,18 +765,21 @@ async function handleApi(parsed, res) {
         deleted: stats.deleted,
         comments: cmtStats.cnt,
         storage: {
-          total: (totalSize / 1024 / 1024).toFixed(2) + " MB",
-          lastHour: (lastHourSize / 1024 / 1024).toFixed(2) + " MB",
-          lastDay: (lastDaySize / 1024 / 1024).toFixed(2) + " MB",
-          estimatedMonth: ((lastDaySize * 30) / 1024 / 1024).toFixed(2) + " MB"
+          total: (totalSize / 1024 / 1024).toFixed(2) + " MB"
         }
       }), "application/json");
     } catch (e) { send(res, 500, e.message); }
     return true;
   }
   if (parsed.pathname === "/api/config") {
-    send(res, 200, JSON.stringify({ gallId: GALL_ID, gallName: GALL_NAME, gallType: GALL_TYPE }), "application/json");
-    return;
+    const gall = GALLERIES[gallId];
+    send(res, 200, JSON.stringify({ 
+      gallId: gall.id, 
+      gallName: gall.name, 
+      gallType: gall.type,
+      allGalleries: Object.values(GALLERIES).map(g => ({ id: g.id, name: g.name }))
+    }), "application/json");
+    return true;
   }
 
   if (parsed.pathname === "/api/list") {
@@ -806,11 +789,11 @@ async function handleApi(parsed, res) {
     const sm = parsed.query.sm || "all";
 
     try {
-      // 1페이지일 때는 실시간 동기화 병행 (백그라운드에서 진행하여 API 응답 지연 방지)
       if (page === "1" && !q && mode === "all") {
-        fetchText(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`, SOURCE + '/').then(html => {
+        const gall = GALLERIES[gallId];
+        fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=1`, SOURCE + '/').then(html => {
           const list = parseList(html);
-          mergeCacheFromList(1, list); // await 생략
+          mergeCacheFromList(dbMgr, gallId, 1, list);
         }).catch(e => console.error("[Background Sync Error]", e.message));
       }
 
@@ -823,17 +806,14 @@ async function handleApi(parsed, res) {
     const no = parsed.query.no;
     try {
       let post = await dbMgr.getPost(no);
-      // 만약 DB에 없거나 내용이 부실하거나 업데이트가 필요하면 실시간 수집
       if (!post || (!post.rawText && !post.contentHtml) || (Date.now() - (post.updatedAt || 0) > 10 * 60 * 1000)) {
-        const url = buildDcUrl(no, parsed.query.page);
-        // processItem을 호출하여 수집/변환/저장 로직을 일원화
-        await processItem({ no, href: url, page: parsed.query.page || 1 }, SOURCE + '/');
+        const url = buildDcUrl(gallId, no, parsed.query.page);
+        await processItem(dbMgr, gallId, { no, href: url, page: parsed.query.page || 1 }, SOURCE + '/');
         post = await dbMgr.getPost(no);
       }
 
       if (post) {
-        // DB에는 href가 저장되지 않으므로 API 응답 시 복구해줍니다.
-        post.href = post.href || buildDcUrl(post.no);
+        post.href = post.href || buildDcUrl(gallId, post.no);
         send(res, 200, JSON.stringify(post), "application/json");
       } else {
         send(res, 200, JSON.stringify({ deleted: true }), "application/json");
@@ -841,12 +821,11 @@ async function handleApi(parsed, res) {
     } catch (e) {
       console.error("[ApiPost Error]", e.message);
       const post = await dbMgr.getPost(no);
-      if (post) post.href = post.href || buildDcUrl(post.no);
+      if (post) post.href = post.href || buildDcUrl(gallId, post.no);
       send(res, 200, JSON.stringify(post || { deleted: true }), "application/json");
     }
     return true;
   }
-
 
   if (parsed.pathname === "/api/purge-image") {
     const imgPath = parsed.query.path;
@@ -857,10 +836,8 @@ async function handleApi(parsed, res) {
       if (!info) return send(res, 404, JSON.stringify({ success: false, error: "Image not found in DB" }), "application/json");
 
       const targetHash = info.originalHash;
-      // 1. 블랙리스트 등록 (재수집 방지)
       if (targetHash) await dbMgr.blacklistImage(targetHash, "사용자 요청에 의한 말소");
 
-      // 2. 해당 해시를 가진 모든 이미지 정보 가져오기
       const allOccurrences = targetHash
         ? await dbMgr.db.prepare(`SELECT path FROM images WHERE originalHash = ?`).all(targetHash)
         : [{ path: imgPath }];
@@ -868,28 +845,14 @@ async function handleApi(parsed, res) {
       let deletedCount = 0;
       for (const occurrence of allOccurrences) {
         const fullPath = path.join(MEDIA_DIR, path.basename(occurrence.path));
-
-        // 3. 물리적 파일 삭제
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
           deletedCount++;
         }
 
-        // 4. 모든 게시글 본문에서 해당 이미지 태그 소거
-        const escapedPath = occurrence.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const imgTagRe = new RegExp(`<img[^>]+src=["']${escapedPath}["'][^>]*>`, 'gi');
+        const imgTagRe = new RegExp(`<img[^>]+src=["']${occurrence.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`, 'gi');
         const replacement = `<div style="padding:20px; background:#fee2e2; border:1px solid #ef4444; border-radius:8px; color:#b91c1c; font-size:12px; text-align:center; margin:10px 0;">관리자에 의해 영구 삭제된 이미지입니다.</div>`;
 
-        await dbMgr.db.prepare(`
-          UPDATE posts SET contentHtml = REPLACE(contentHtml, (
-            SELECT substr(contentHtml, instr(contentHtml, '<img'), instr(substr(contentHtml, instr(contentHtml, '${occurrence.path}')), '>') + instr(contentHtml, '${occurrence.path}') - instr(contentHtml, '<img'))
-            FROM posts WHERE contentHtml LIKE ? LIMIT 1
-          ), ?)
-          WHERE contentHtml LIKE ?
-        `).run(`%${occurrence.path}%`, replacement, `%${occurrence.path}%`);
-
-        // 단순 REPLACE는 HTML 구조에 따라 위험할 수 있으므로, 더 안전한 정규식 기반 업데이트가 필요하지만 
-        // SQLite 내부에서 정규식 처리는 어려우므로 fetch -> replace -> save 방식으로 진행
         const affectedPosts = await dbMgr.query(`SELECT no, contentHtml FROM posts WHERE contentHtml LIKE ?`, [`%${occurrence.path}%`]);
         for (const p of affectedPosts) {
           const newHtml = p.contentHtml.replace(imgTagRe, replacement);
@@ -897,14 +860,12 @@ async function handleApi(parsed, res) {
         }
       }
 
-      // 5. DB에서 이미지 정보 삭제
       if (targetHash) {
         await dbMgr.db.prepare(`DELETE FROM images WHERE originalHash = ?`).run(targetHash);
       } else {
         await dbMgr.db.prepare(`DELETE FROM images WHERE path = ?`).run(imgPath);
       }
 
-      console.log(`[Purge] 이미지 ${deletedCount}개 물리적 삭제 및 블랙리스트 등록 완료 (Hash: ${targetHash})`);
       send(res, 200, JSON.stringify({ success: true, deletedCount, hash: targetHash }), "application/json");
     } catch (e) {
       logError(e, "PurgeImage");
@@ -912,28 +873,6 @@ async function handleApi(parsed, res) {
     }
     return true;
   }
-
-  if (parsed.pathname === "/api/image-debug") {
-    const no = parsed.query.no;
-    const cached = no ? await dbMgr.getPost(no) : null;
-    const mediaFiles = fs.readdirSync(MEDIA_DIR).length;
-
-    if (!no) {
-      send(res, 200, JSON.stringify({ mediaFileCount: mediaFiles, info: "no parameter required" }, null, 2), "application/json");
-      return true;
-    }
-
-    send(res, 200, JSON.stringify({
-      no,
-      title: cached?.title,
-      author: cached?.author,
-      rawImages: cached?.images || [],
-      localImages: cached?.localImages || [],
-      mediaFileCount: mediaFiles
-    }, null, 2), "application/json");
-    return true;
-  }
-
 
   if (parsed.pathname === "/api/media-all") {
     const sort = parsed.query.sort || 'latest';
@@ -943,104 +882,49 @@ async function handleApi(parsed, res) {
     const offset = parseInt(parsed.query.offset || 0);
 
     try {
-      let query = `
-        SELECT path, originalHash as hash, MAX(id) as lastId, COUNT(*) as refCount 
-        FROM images 
-        WHERE 1=1
-      `;
+      let sql = `SELECT path, originalHash as hash, MAX(id) as lastId, COUNT(*) as refCount FROM images WHERE 1=1`;
       let params = [];
-
-      if (postNo) {
-        query += ` AND postNo = ? `;
-        params.push(postNo);
-      }
-      if (hash) {
-        query += ` AND originalHash = ? `;
-        params.push(hash);
-      }
-
-      query += ` GROUP BY originalHash `;
-
-      if (sort === 'popular') {
-        query += ` ORDER BY refCount DESC, lastId DESC `;
-      } else {
-        query += ` ORDER BY lastId DESC `;
-      }
-
-      query += ` LIMIT ? OFFSET ? `;
+      if (postNo) { sql += ` AND postNo = ? `; params.push(postNo); }
+      if (hash) { sql += ` AND originalHash = ? `; params.push(hash); }
+      sql += ` GROUP BY originalHash `;
+      sql += sort === 'popular' ? ` ORDER BY refCount DESC, lastId DESC ` : ` ORDER BY lastId DESC `;
+      sql += ` LIMIT ? OFFSET ? `;
       params.push(limit, offset);
 
-      const data = await dbMgr.query(query, params);
+      const data = await dbMgr.query(sql, params);
       send(res, 200, JSON.stringify(data), "application/json");
-    } catch (e) {
-      send(res, 500, JSON.stringify({ error: e.message }), "application/json");
-    }
-    return true;
-  }
-
-  if (parsed.pathname === "/api/media-posts") {
-    const hash = parsed.query.hash;
-    if (!hash) return send(res, 400, JSON.stringify({ error: "hash required" }), "application/json");
-    try {
-      const posts = await dbMgr.query(`
-        SELECT p.no, p.title, p.author 
-        FROM posts p
-        JOIN images i ON p.no = i.postNo
-        WHERE i.originalHash = ?
-        ORDER BY p.no DESC
-        LIMIT 100
-      `, [hash]);
-      send(res, 200, JSON.stringify(posts), "application/json");
-    } catch (e) {
-      send(res, 500, JSON.stringify({ error: e.message }), "application/json");
-    }
+    } catch (e) { send(res, 500, JSON.stringify({ error: e.message }), "application/json"); }
     return true;
   }
 
   if (parsed.pathname === "/api/debug") {
     const total = await dbMgr.get("SELECT COUNT(*) as cnt FROM posts");
     const withCmt = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");
-    const imgStats = await dbMgr.get(`
-      SELECT 
-        COUNT(*) as totalRefs, 
-        COUNT(DISTINCT originalHash) as uniqueFiles,
-        (COUNT(*) - COUNT(DISTINCT originalHash)) as savedCount
-      FROM images
-      WHERE originalHash IS NOT NULL AND originalHash != ''
-    `);
-
-    send(res, 200, JSON.stringify({
-      system: {
-        totalPosts: total.cnt,
-        postsWithComments: withCmt.cnt
-      },
-      imageDeduplication: {
-        totalReferences: imgStats.totalRefs,
-        actualFilesOnDisk: imgStats.uniqueFiles,
-        savedSpaceCount: imgStats.savedCount,
-        efficiency: imgStats.totalRefs > 0 ? ((imgStats.savedCount / imgStats.totalRefs) * 100).toFixed(2) + '%' : '0%'
-      }
-    }, null, 2), "application/json");
+    send(res, 200, JSON.stringify({ totalPosts: total.cnt, postsWithComments: withCmt.cnt }, null, 2), "application/json");
     return true;
   }
   return false;
 }
 
-const WATCH_LIST_FILE = "watch-list.json";
-let WATCH_LIST = [];
+// 갤러리별 개별 감시 목록 파일 및 갱신 엔진
+const getWatchListFile = (gallId) => `watch-list_${gallId}.json`;
+const WATCH_LISTS = {};
 
-function loadWatchList() {
-  if (fs.existsSync(WATCH_LIST_FILE)) {
-    try { WATCH_LIST = JSON.parse(fs.readFileSync(WATCH_LIST_FILE, "utf-8")); } catch (e) { }
+function loadWatchList(gallId) {
+  const file = getWatchListFile(gallId);
+  if (fs.existsSync(file)) {
+    try { WATCH_LISTS[gallId] = JSON.parse(fs.readFileSync(file, "utf-8")); } catch (e) { }
   }
-  if (!Array.isArray(WATCH_LIST)) WATCH_LIST = [];
+  if (!Array.isArray(WATCH_LISTS[gallId])) WATCH_LISTS[gallId] = [];
 }
-function saveWatchList() {
-  try { fs.writeFileSync(WATCH_LIST_FILE, JSON.stringify(WATCH_LIST, null, 2), "utf-8"); } catch (e) { }
+function saveWatchList(gallId) {
+  try { fs.writeFileSync(getWatchListFile(gallId), JSON.stringify(WATCH_LISTS[gallId], null, 2), "utf-8"); } catch (e) { }
 }
-loadWatchList();
 
-// 5초마다 임시 파일(add-watch.bat에서 생성) 확인하여 감시 목록 추가
+// 초기 로드
+for (const id in GALLERIES) loadWatchList(id);
+
+// 5초마다 임시 파일 확인 (레거시 대응: watch-list.tmp는 기본 갤러리 'vr'로 처리)
 setInterval(() => {
   const tmpFile = path.join(__dirname, "watch-list.tmp");
   if (fs.existsSync(tmpFile)) {
@@ -1048,22 +932,25 @@ setInterval(() => {
       const content = fs.readFileSync(tmpFile, "utf-8").trim();
       const lines = content.split(/\r?\n/);
       let added = false;
+      const gallId = "vr"; // 레거시 뱃지 파일은 vr로 고정
+      const dbMgr = dbManagers[gallId];
+
       for (let no of lines) {
         no = no.trim();
-        if (no && /^\d+$/.test(no) && !WATCH_LIST.includes(no)) {
-          WATCH_LIST.push(no);
+        if (no && /^\d+$/.test(no) && !WATCH_LISTS[gallId].includes(no)) {
+          WATCH_LISTS[gallId].push(no);
           added = true;
-          console.log(`[Watchdog] 새 감시 대상 추가: ${no}`);
-          processItem({ no, href: buildDcUrl(no, 1), type: 'notice' }, SOURCE + '/').catch(() => { });
+          console.log(`[Watchdog:${gallId}] 새 감시 대상 추가: ${no}`);
+          processItem(dbMgr, gallId, { no, href: buildDcUrl(gallId, no, 1), type: 'notice' }, SOURCE + '/').catch(() => { });
         }
       }
-      if (added) saveWatchList();
+      if (added) saveWatchList(gallId);
       fs.unlinkSync(tmpFile);
     } catch (e) { }
   }
 }, 5000);
 
-async function shouldProcess(item) {
+async function shouldProcess(dbMgr, gallId, item) {
   const cached = await dbMgr.getPost(item.no);
   if (!cached || !cached.archivedAt) return true;
 
@@ -1071,7 +958,7 @@ async function shouldProcess(item) {
   const lastUpdate = cached.updatedAt || cached.archivedAt || 0;
 
   // 1. 고정 감시 대상 (WATCH_LIST)
-  const isPriority = WATCH_LIST.includes(String(item.no));
+  const isPriority = (WATCH_LISTS[gallId] || []).includes(String(item.no));
   if (isPriority) {
     if (now - lastUpdate > 2 * 60 * 1000) return true;
   }
@@ -1089,7 +976,7 @@ async function shouldProcess(item) {
 
   return false;
 }
-async function processItem(item, referer = SOURCE + '/') {
+async function processItem(dbMgr, gallId, item, referer = SOURCE + '/') {
   const no = item.no;
   try {
     const html = await fetchText(item.href, referer);
@@ -1119,7 +1006,7 @@ async function processItem(item, referer = SOURCE + '/') {
     contentHtml = contentHtml.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/on\w+="[^"]*"/gi, "");
 
     const prev = await dbMgr.getPost(no);
-    post.comments = await fetchComments(no, item.page || 1, post, (prev && prev.comments) || []);
+    post.comments = await fetchComments(dbMgr, gallId, no, item.page || 1, post, (prev && prev.comments) || []);
 
     const merged = Object.assign({}, prev || {}, post, {
       no: no,
@@ -1197,18 +1084,19 @@ async function processItem(item, referer = SOURCE + '/') {
 }
 
 
-let isCrawling = false;
-async function backgroundCrawl(targetPages) {
+let crawlingStates = {};
+
+async function backgroundCrawl(dbMgr, gallId, targetPages) {
+  const gall = GALLERIES[gallId];
   const pCount = targetPages || CRAWL_PAGES;
   const isManual = !!targetPages;
 
-  // 자동 크롤링일 때만 중복 실행 방지, 수동(isManual)은 무조건 실행
-  if (!isManual && isCrawling) return;
+  if (!isManual && crawlingStates[gallId]) return;
 
-  isCrawling = true;
+  crawlingStates[gallId] = true;
   try {
     for (let bp = 1; bp <= 1; bp++) { // 퀵싱크는 1페이지만 빠르게
-      const html = await fetchText(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=${bp}&exception_mode=recommend`, SOURCE + '/');
+      const html = await fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${bp}&exception_mode=recommend`, SOURCE + '/');
       const list = parseList(html);
       for (const item of list.items) {
         const prev = await dbMgr.getPost(item.no);
@@ -1218,32 +1106,32 @@ async function backgroundCrawl(targetPages) {
         item.type = "best";
       }
       const targets = [];
-      for (const i of list.items) { if (await shouldProcess(i)) targets.push(i); }
-      for (const t of targets) { await processItem(t); await jitterWait(isManual ? 300 : 1000, isManual ? 600 : 2000); }
+      for (const i of list.items) { if (await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
+      for (const t of targets) { await processItem(dbMgr, gallId, t); await jitterWait(isManual ? 300 : 1000, isManual ? 600 : 2000); }
     }
     for (let p = 1; p <= pCount; p++) {
-      const listUrl = `${SOURCE}/mgallery/board/lists/?id=vr&page=${p}`;
+      const listUrl = `${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${p}`;
       const html = await fetchText(listUrl, SOURCE + '/');
-      const list = parseList(html); mergeCacheFromList(p, list);
+      const list = parseList(html); mergeCacheFromList(dbMgr, gallId, p, list);
 
       const targets = [];
-      for (const i of list.items) { if ((p <= 3 || isManual) ? true : await shouldProcess(i)) targets.push(i); }
+      for (const i of list.items) { if ((p <= 3 || isManual) ? true : await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
       for (const t of targets) {
-        await processItem(t, listUrl);
+        await processItem(dbMgr, gallId, t, listUrl);
         await jitterWait(isManual ? 500 : 2000, isManual ? 1000 : 5000);
       }
-      // 페이지당 수집 후 5~10초간 '심호흡' (사람처럼 행동)
       if (!isManual) await jitterWait(5000, 10000);
     }
-  } finally { isCrawling = false; }
+  } finally { crawlingStates[gallId] = false; }
 }
-let isRefreshingBest = false;
-async function refreshBestPosts() {
-  if (isRefreshingBest || isCrawling) return; isRefreshingBest = true;
-  try {
-    const watchIds = WATCH_LIST.length > 0 ? WATCH_LIST.join(',') : '0';
 
-    // 1. 화이트리스트 2. 개념글 3. 최신 150개 글을 통합하여 감시 대상으로 선정
+let refreshingBestStates = {};
+async function refreshBestPosts(dbMgr, gallId) {
+  if (refreshingBestStates[gallId] || crawlingStates[gallId]) return; refreshingBestStates[gallId] = true;
+  try {
+    const watchList = WATCH_LISTS[gallId] || [];
+    const watchIds = watchList.length > 0 ? watchList.join(',') : '0';
+
     const targets = await dbMgr.query(`
       SELECT * FROM posts 
       WHERE (type = 'best' OR no IN (${watchIds}) OR no > (SELECT MAX(no) - 150 FROM posts))
@@ -1252,51 +1140,49 @@ async function refreshBestPosts() {
       LIMIT ?
     `, [BEST_REFRESH_LIMIT]);
 
-    for (const t of targets) { await processItem(t); await jitterWait(2000, 5000); }
-  } finally { isRefreshingBest = false; }
+    for (const t of targets) { await processItem(dbMgr, gallId, t); await jitterWait(2000, 5000); }
+  } finally { refreshingBestStates[gallId] = false; }
 }
-const STARTUP_MAX_PAGES = 10;
-async function startupCatchup() {
+
+async function startupCatchup(dbMgr, gallId) {
+  const gall = GALLERIES[gallId];
   const lastRow = await dbMgr.get(`SELECT MAX(no) as maxNo FROM posts WHERE archivedAt > 0`);
   const last = lastRow ? lastRow.maxNo : 0;
-  if (last === 0) return backgroundCrawl();
+  if (last === 0) return backgroundCrawl(dbMgr, gallId);
 
-  isCrawling = true; try {
+  crawlingStates[gallId] = true; try {
     for (let p = 1; p <= STARTUP_MAX_PAGES; p++) {
-      const html = await fetchText(`${SOURCE}/mgallery/board/lists/?id=vr&page=${p}`);
-      const list = parseList(html); await mergeCacheFromList(p, list);
+      const html = await fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${p}`);
+      const list = parseList(html); await mergeCacheFromList(dbMgr, gallId, p, list);
 
       const targets = [];
-      for (const i of list.items) { if (p <= 3 ? true : await shouldProcess(i)) targets.push(i); }
-      for (const t of targets) { await processItem(t); await jitterWait(2000, 5000); }
+      for (const i of list.items) { if (p <= 3 ? true : await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
+      for (const t of targets) { await processItem(dbMgr, gallId, t); await jitterWait(2000, 5000); }
 
       const pMin = Math.min(...list.items.filter(i => i.type !== "notice").map(i => Number(i.no)));
       if (targets.length === 0 && pMin > 0 && pMin < last) break;
     }
 
-    // 🚨 [추가] 최근 글 50개 삭제 여부 즉시 점검
     const recentPosts = await dbMgr.query(`SELECT * FROM posts WHERE deleted = 0 ORDER BY no DESC LIMIT 50`);
-    console.log(`[System] 최근 글 ${recentPosts.length}개 상태 집중 점검 중...`);
+    console.log(`[System:${gallId}] 최근 글 ${recentPosts.length}개 상태 집중 점검 중...`);
     for (const t of recentPosts) {
-      await processItem(t);
-      // 점검은 수집보다 가벼우므로 0.5초 간격
+      await processItem(dbMgr, gallId, t);
       await new Promise(r => setTimeout(r, 500));
     }
-  } finally { isCrawling = false; }
+  } finally { crawlingStates[gallId] = false; }
 }
 
 // ── 최근 활성 글 정밀 삭제 감시 (Active Range Cleaner) ────────
 const CLEANER_RANGE = 3000; // 최신 글 번호 기준 3000개 범위 집중 감시
 let cleanerOffset = 0;
 
-async function activeRangeCleaner() {
-  if (isCrawling || isIpThrottled) return;
+async function activeRangeCleaner(dbMgr, gallId) {
+  if (crawlingStates[gallId] || isIpThrottled) return;
   try {
     const maxRow = await dbMgr.get(`SELECT MAX(no) as maxNo FROM posts`);
     const maxNo = maxRow ? maxRow.maxNo : 0;
     if (maxNo === 0) return;
 
-    // 감시 범위 내의 글 중 5개를 가져와서 상태 확인
     const minNo = maxNo - CLEANER_RANGE;
     const targets = await dbMgr.query(
       `SELECT * FROM posts WHERE no > ? AND deleted = 0 ORDER BY updatedAt ASC LIMIT 5`,
@@ -1304,87 +1190,75 @@ async function activeRangeCleaner() {
     );
 
     for (const t of targets) {
-      // processItem이 내부적으로 fetchText를 통해 삭제를 감지함
-      await processItem(t);
-      await jitterWait(3000, 7000); // 디시 서버 배려를 위해 천천히
+      await processItem(dbMgr, gallId, t);
+      await jitterWait(3000, 7000);
     }
   } catch (e) {
-    console.error("[Cleaner] Active range scan failed:", e.message);
+    console.error(`[Cleaner:${gallId}] Active range scan failed:`, e.message);
   }
 }
 
 // ── 번호 예측 스나이퍼 (Predictive Sniper) ──────────────
-let lastKnownMaxId = 0;
-let sniperDelay = 3000;
+let snifferStates = {};
 
-async function sniffer() {
-  if (isCrawling || isIpThrottled) {
-    setTimeout(sniffer, 5000);
+async function sniffer(gallId) {
+  const dbMgr = dbManagers[gallId];
+  const gall = GALLERIES[gallId];
+  if (!snifferStates[gallId]) snifferStates[gallId] = { lastKnownMaxId: 0, sniperDelay: 3000 };
+  const state = snifferStates[gallId];
+
+  if (crawlingStates[gallId] || isIpThrottled) {
+    setTimeout(() => sniffer(gallId), 5000);
     return;
   }
 
   try {
-    const html = await fetchTextHead(`${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`, SOURCE + '/');
+    const listUrl = `${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=1`;
+    const html = await fetchTextHead(listUrl, SOURCE + '/');
     const list = parseList(html);
     const currentMax = Math.max(...list.items.map(i => Number(i.no) || 0));
 
-    if (lastKnownMaxId === 0) {
-      lastKnownMaxId = currentMax;
-    } else if (currentMax > lastKnownMaxId) {
-      const newItems = list.items.filter(i => Number(i.no) > lastKnownMaxId);
-      console.log(`[Sniper] 목록에서 새 글 ${newItems.length}개 발견! (MaxID: ${lastKnownMaxId} -> ${currentMax})`);
-      lastKnownMaxId = currentMax;
-      sniperDelay = 2000;
+    if (state.lastKnownMaxId === 0) {
+      state.lastKnownMaxId = currentMax;
+    } else if (currentMax > state.lastKnownMaxId) {
+      const newItems = list.items.filter(i => Number(i.no) > state.lastKnownMaxId);
+      console.log(`[Sniper:${gallId}] 새 글 ${newItems.length}개 발견! (${state.lastKnownMaxId} -> ${currentMax})`);
+      state.lastKnownMaxId = currentMax;
+      state.sniperDelay = 2000;
 
       const tasks = newItems.map(async (item, index) => {
         await new Promise(r => setTimeout(r, index * 150));
-        return processItem(item, `${SOURCE}/${GALL_TYPE}/board/lists/?id=${GALL_ID}&page=1`);
+        return processItem(dbMgr, gallId, item, listUrl);
       });
       await Promise.all(tasks);
     } else {
-      // 🚀 [핵심] 예측 스나이핑: 목록에 없더라도 다음 번호를 미리 찔러봅니다.
-      // 현재 번호의 다음 번호(Max + 1)를 선제적으로 획득 시도
-      const nextId = lastKnownMaxId + 1;
-      const targetUrl = buildDcUrl(nextId, 1);
-
-      // 아주 가볍게 헤더만 먼저 확인하거나 바로 본문을 찔러봅니다.
+      const nextId = state.lastKnownMaxId + 1;
+      const targetUrl = buildDcUrl(gallId, nextId, 1);
       const futureHtml = await fetchText(targetUrl, SOURCE + '/').catch(() => null);
 
       if (futureHtml && !futureHtml.includes('삭제된 게시물') && !futureHtml.includes('잘못된 접근') && futureHtml.includes('class="title_subject"')) {
-        console.log(`[Sniper] 🎯 예측 적중! 목록 노출 전 글 낚음: ${nextId}`);
-        lastKnownMaxId = nextId; // 다음 타겟 상향
-
+        console.log(`[Sniper:${gallId}] 🎯 예측 적중! 목록 노출 전 글 낚음: ${nextId}`);
+        state.lastKnownMaxId = nextId;
         const parsed = parsePost(futureHtml, targetUrl);
         if (parsed._isValid) {
-          await processItem({ no: nextId, href: targetUrl, type: 'normal', title: parsed.title }, SOURCE + '/');
+          await processItem(dbMgr, gallId, { no: nextId, href: targetUrl, type: 'normal', title: parsed.title }, SOURCE + '/');
         }
-        sniperDelay = 1000; // 성공 시 더 빠르게 다음 번호 대기
+        state.sniperDelay = 1000;
       } else {
-        sniperDelay = Math.min(sniperDelay + 1000, 10000); // 없으면 천천히
+        state.sniperDelay = Math.min(state.sniperDelay + 1000, 10000);
       }
     }
   } catch (e) {
-    sniperDelay = 10000;
+    state.sniperDelay = 10000;
   }
 
-  setTimeout(sniffer, sniperDelay);
+  setTimeout(() => sniffer(gallId), state.sniperDelay);
 }
 
-startupCatchup().catch(() => { });
-// 맥박 스나이퍼 가동
-setTimeout(sniffer, 5000);
-
-// 5분마다 전체 1페이지 동기화 (안전 수치로 조정)
-setInterval(() => backgroundCrawl(1).catch(() => { }), 5 * 60 * 1000);
-// 30분마다 전체 정밀 싱크
-setInterval(() => backgroundCrawl(CRAWL_PAGES).catch(() => { }), 30 * 60 * 1000);
-setTimeout(() => { refreshBestPosts(); setInterval(refreshBestPosts, 10 * 60 * 1000); }, 3 * 60 * 1000);
-
-// ── 댓글 대량 복구 엔진 (가속 버전) ───────────────────────────
-let isRecoveringComments = false;
-async function commentRecoveryEngine() {
-  if (isRecoveringComments || isIpThrottled) return;
-  isRecoveringComments = true;
+let recoveringCommentStates = {};
+async function commentRecoveryEngine(dbMgr, gallId) {
+  if (recoveringCommentStates[gallId] || isIpThrottled) return;
+  recoveringCommentStates[gallId] = true;
   try {
     const targets = await dbMgr.query(`
       SELECT p.* FROM posts p
@@ -1394,24 +1268,22 @@ async function commentRecoveryEngine() {
       AND (c.cmt_cnt IS NULL OR c.cmt_cnt = 0)
     `);
     if (targets.length === 0) return;
-    // 글 번호(no) 기준 내림차순 정렬 → 최신 글부터 처리
     const batch = targets
       .sort((a, b) => parseInt(b.no, 10) - parseInt(a.no, 10))
       .slice(0, 20);
-    console.log(`[Recovery] 누락 ${targets.length}개 / 최신 ${batch.length}개 처리 (${batch[0]?.no} ~ ${batch[batch.length - 1]?.no})`);
+    console.log(`[Recovery:${gallId}] 누락 ${targets.length}개 / 최신 ${batch.length}개 처리`);
 
     for (const post of batch) {
       if (isIpThrottled) break;
       try {
-        const targetUrl = post.href || buildDcUrl(post.no, 1);
+        const targetUrl = post.href || buildDcUrl(gallId, post.no, 1);
         const html = await fetchText(targetUrl, SOURCE + '/');
         if (html.includes('삭제된 게시물') || html.includes('잘못된 접근')) {
           await dbMgr.run(`UPDATE posts SET deleted = 1 WHERE no = ?`, [post.no]);
         } else {
           const parsedPost = parsePost(html, post.href);
-          const comments = await fetchComments(post.no, 1, parsedPost, post.comments || []);
+          const comments = await fetchComments(dbMgr, gallId, post.no, 1, parsedPost, post.comments || []);
 
-          // 이미지도 함께 복구
           let localImages = post.localImages || [];
           if (parsedPost.images && parsedPost.images.length > 0 && localImages.length === 0) {
             const cached = [];
@@ -1429,29 +1301,50 @@ async function commentRecoveryEngine() {
           await dbMgr.savePost(merged);
         }
         await jitterWait(1000, 2500);
-      } catch (e) { /* 개별 실패 무시 */ }
+      } catch (e) { }
     }
-    const remainingRow = await dbMgr.get(`
-      SELECT COUNT(*) as cnt FROM posts p
-      LEFT JOIN (SELECT postNo, COUNT(*) as cmt_cnt FROM comments GROUP BY postNo) c ON p.no = c.postNo
-      WHERE p.deleted = 0 AND p.commentCount > 0 AND (c.cmt_cnt IS NULL OR c.cmt_cnt = 0)
-    `);
-    console.log(`[Recovery] 배치 완료. 남은 누락: ${remainingRow.cnt}개`);
-  } finally { isRecoveringComments = false; }
+  } finally { recoveringCommentStates[gallId] = false; }
 }
-setTimeout(() => {
-  commentRecoveryEngine().catch(() => { });
-  setInterval(() => commentRecoveryEngine().catch(() => { }), 30 * 1000);
-}, 10 * 1000);
+
+// 초기 기동 루프
+(async () => {
+  await initAllDatabases();
+  for (const id in GALLERIES) {
+    const dbMgr = dbManagers[id];
+    startupCatchup(dbMgr, id).catch(() => { });
+    setTimeout(() => sniffer(id), 5000);
+    setInterval(() => backgroundCrawl(dbMgr, id, 1).catch(() => { }), 5 * 60 * 1000);
+    setInterval(() => backgroundCrawl(dbMgr, id, CRAWL_PAGES).catch(() => { }), 30 * 60 * 1000);
+    setTimeout(() => { 
+      refreshBestPosts(dbMgr, id); 
+      setInterval(() => refreshBestPosts(dbMgr, id), 10 * 60 * 1000); 
+    }, 3 * 60 * 1000);
+    
+    setTimeout(() => {
+      commentRecoveryEngine(dbMgr, id).catch(() => { });
+      setInterval(() => commentRecoveryEngine(dbMgr, id).catch(() => { }), 60 * 1000);
+    }, 20 * 1000);
+
+    // Active Range Cleaner 추가
+    setInterval(() => activeRangeCleaner(dbMgr, id).catch(() => { }), 2 * 60 * 1000);
+  }
+})();
 
 
 http.createServer(async (req, res) => {
   const parsed = urlLib.parse(req.url, true);
   try {
     if (await handleApi(parsed, res)) return;
-    if (parsed.pathname === "/" || parsed.pathname === "/index.html" || parsed.pathname === "/list/vr" || parsed.pathname.startsWith("/view/vr/")) {
+
+    // 갤러리별 경로 처리 (/list/vr, /list/nevernesstoeverness 등)
+    const isGalleryPath = Object.keys(GALLERIES).some(id => 
+      parsed.pathname === `/list/${id}` || parsed.pathname.startsWith(`/view/${id}/`)
+    );
+
+    if (parsed.pathname === "/" || parsed.pathname === "/index.html" || isGalleryPath) {
       return send(res, 200, fs.readFileSync(INDEX, "utf8"), "text/html; charset=utf-8");
     }
+
     if (parsed.pathname.startsWith("/media/")) {
       const f = path.join(MEDIA_DIR, path.basename(parsed.pathname));
       if (fs.existsSync(f)) {
@@ -1469,22 +1362,24 @@ http.createServer(async (req, res) => {
     send(res, 404, "Not found");
   } catch (e) { send(res, 500, e.message); }
 }).listen(PORT, async () => {
-  const stats = await dbMgr.get("SELECT COUNT(*) as total, SUM(CASE WHEN deleted=1 THEN 1 ELSE 0 END) as deleted FROM posts");
-  const cmtStats = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");
-  const mediaFiles = fs.existsSync(MEDIA_DIR) ? fs.readdirSync(MEDIA_DIR).length : 0;
-
   console.log(`
   ##################################################
   #                                                #
-  #   🚀 REAL-TIME IMAGE & COMMENT ARCHIVE v2.1    #
+  #   🚀 MULTI-GALLERY ARCHIVE SYSTEM v3.0         #
   #   (SQLite Engine Activated)                     #
   #                                                #
-  #   📡 Server : http://localhost:${PORT}          #
-  #   📦 Posts  : ${(stats?.total || 0).toLocaleString()} items (${(stats?.deleted || 0).toLocaleString()} deleted)
-  #   💬 Cmt    : ${(cmtStats?.cnt || 0).toLocaleString()} posts recovered
-  #   🖼️ Media  : ${(mediaFiles || 0).toLocaleString()} files cached
-  #                                                #
+  #   📡 Server : http://localhost:${PORT}          #`);
+  
+  for (const id in GALLERIES) {
+    const dbMgr = dbManagers[id];
+    const stats = await dbMgr.get("SELECT COUNT(*) as total FROM posts");
+    console.log(`  #   📦 [${id}] Posts: ${(stats?.total || 0).toLocaleString().padEnd(10)} items`);
+  }
+  
+  const mediaFiles = fs.existsSync(MEDIA_DIR) ? fs.readdirSync(MEDIA_DIR).length : 0;
+  console.log(`  #   🖼️  Media : ${mediaFiles.toLocaleString().padEnd(10)} files cached`);
+  console.log(`  #                                                #
   ##################################################
-  [System] ${new Date().toLocaleString()} 아카이브 엔진 가동 중...
+  [System] ${new Date().toLocaleString()} 모든 엔진 가동 완료!
   `);
 });

@@ -527,7 +527,14 @@
   <div class="wrap">
     <section class="board" id="boardView">
       <div class="head">
-        <div class="titlebox"><a href="/" style="text-decoration:none;color:inherit"><strong id="headerTitle">갤러리 저장소</strong></a></div>
+        <div class="titlebox">
+          <a href="/" style="text-decoration:none;color:inherit">
+            <strong id="headerTitle">갤러리 저장소</strong>
+          </a>
+          <select id="gallSelector" class="btn" style="margin-left:10px; background:var(--soft); border-color:var(--accent); font-weight:700;">
+            <!-- 갤러리 목록이 동적으로 채워짐 -->
+          </select>
+        </div>
         <div class="searchbar">
           <span class="count" id="resultCount">불러오는 중...</span>
           <select id="searchMode" class="btn" style="padding:4px">
@@ -625,8 +632,10 @@
     </div>
   </div>
   <script>
-    let gallId = "vr";
+    // URL 경로에서 갤러리 ID 추출 (/list/vr -> vr)
+    let gallId = location.pathname.split('/')[2] || "vr";
     let gallName = "브이알챗";
+
     const qs = new URLSearchParams(location.search);
     const pageParam = Number(qs.get('page')) || 1;
     const modeParam = qs.get('mode') || 'all';
@@ -634,7 +643,8 @@
     
     async function initApp() {
       try {
-        const res = await fetch('/api/config');
+        // 해당 갤러리 설정 및 전체 갤러리 목록 가져오기
+        const res = await fetch(`/api/config?gall=${gallId}`);
         const config = await res.json();
         gallId = config.gallId;
         gallName = config.gallName;
@@ -643,6 +653,17 @@
         document.getElementById('headerTitle').textContent = `${gallName} 아카이브`;
         document.getElementById('footerText').textContent = `${gallName} 스타일 백업 저장소`;
         document.getElementById('backToList').href = `/list/${gallId}`;
+
+        // 갤러리 셀렉터 구성
+        const selector = document.getElementById('gallSelector');
+        if (config.allGalleries) {
+          selector.innerHTML = config.allGalleries.map(g => 
+            `<option value="${g.id}" ${g.id === gallId ? 'selected' : ''}>${g.name}</option>`
+          ).join('');
+        }
+        selector.onchange = (e) => {
+          location.href = `/list/${e.target.value}`;
+        };
         
         const noFromPath = location.pathname.split('/').pop();
         if (location.pathname.includes('/view/')) {
@@ -730,7 +751,7 @@
       const hash = document.getElementById('galleryHash').value;
       
       try {
-        const res = await fetch(`/api/media-all?sort=${sort}&postNo=${postNo}&hash=${hash}&offset=${galleryOffset}`);
+        const res = await fetch(`/api/media-all?gall=${gallId}&sort=${sort}&postNo=${postNo}&hash=${hash}&offset=${galleryOffset}`);
         const data = await res.json();
         
         if (!isAppend) galleryGrid.innerHTML = '';
@@ -781,7 +802,7 @@
 
     async function purgeImageFromGallery(path, hash) {
       if (!confirm('이 이미지가 포함된 모든 글에서 이미지를 삭제하고 차단하시겠습니까?')) return;
-      const res = await fetch(`/api/purge-image?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`/api/purge-image?gall=${gallId}&path=${encodeURIComponent(path)}`);
       const data = await res.json();
       if (data.success) {
         const card = document.getElementById(`card-${hash}`);
@@ -955,7 +976,7 @@
     async function loadPage(page, skipPush = false) {
       resultCount.textContent = '불러오는 중...';
       const sm = searchModeSelect.value;
-      const res = await fetch(`/api/list?page=${encodeURIComponent(page)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
+      const res = await fetch(`/api/list?gall=${gallId}&page=${encodeURIComponent(page)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}&sm=${sm}`);
       const data = await res.json();
       setPagination(page, data);
       renderList(data.items || []);
@@ -969,7 +990,7 @@
       showArticle();
       postTitle.textContent = '불러오는 중...';
       postBody.textContent = '본문을 불러오는 중입니다.';
-      const res = await fetch(`/api/post?no=${encodeURIComponent(no)}&page=${encodeURIComponent(page || currentPage)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}`);
+      const res = await fetch(`/api/post?gall=${gallId}&no=${encodeURIComponent(no)}&page=${encodeURIComponent(page || currentPage)}&mode=${encodeURIComponent(currentMode)}&q=${encodeURIComponent(currentQuery)}`);
       const data = await res.json();
 
       // 삭제 여부와 상관없이 저장된 데이터가 있다면 출력
@@ -1011,12 +1032,12 @@
       const btnWatch = document.getElementById('btnWatch');
       if (btnWatch) {
         // 초기 상태 확인
-        const statusRes = await fetch(`/api/watch-status?no=${no}`);
+        const statusRes = await fetch(`/api/watch-status?gall=${gallId}&no=${no}`);
         const statusJson = await statusRes.json();
         updateWatchBtn(statusJson.isWatching);
 
         btnWatch.onclick = async () => {
-          const res = await fetch(`/api/watch-toggle?no=${no}`);
+          const res = await fetch(`/api/watch-toggle?gall=${gallId}&no=${no}`);
           const resJson = await res.json();
           if (resJson.success) {
             updateWatchBtn(resJson.isWatching);
@@ -1040,7 +1061,7 @@
         refreshBtn.onclick = async () => {
           if (!confirm('원본 사이트에서 데이터를 다시 긁어올까요?')) return;
           refreshBtn.textContent = '갱신 중...';
-          const r = await fetch(`/api/refresh-post?no=${no}`);
+          const r = await fetch(`/api/refresh-post?gall=${gallId}&no=${no}`);
           const resJson = await r.json();
           if (resJson.success) {
             alert('갱신 완료!');
@@ -1148,7 +1169,7 @@
       if (!confirm("이 이미지를 서버에서 완전히 삭제하고 블랙리스트에 등록하시겠습니까?\n이 해시를 가진 모든 게시글의 이미지도 함께 삭제됩니다.")) return;
       
       try {
-        const res = await fetch(`/api/purge-image?path=${encodeURIComponent(path)}`);
+        const res = await fetch(`/api/purge-image?gall=${gallId}&path=${encodeURIComponent(path)}`);
         const data = await res.json();
         if (data.success) {
           alert(`성공적으로 삭제되었습니다. (삭제된 파일: ${data.deletedCount}개)`);
@@ -1165,7 +1186,7 @@
 
     async function updateStorageStats() {
       try {
-        const r = await fetch('/api/stats');
+        const r = await fetch(`/api/stats?gall=${gallId}`);
         if (!r.ok) return;
         const data = await r.json();
         const s = data.storage;
