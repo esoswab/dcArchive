@@ -47,6 +47,11 @@ async function sendAlert(msg) {
     await fetch(NOTIFICATION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: `[DC Archive Alert] ${msg}` })
+    });
+  } catch (e) { console.error("[Alert Failed]", e.message); }
+}
+
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const MEDIA_DIR = path.join(__dirname, "media-cache");
 const INDEX = path.join(__dirname, "index.html");
