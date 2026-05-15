@@ -140,7 +140,7 @@ function jitterWait(min, max) {
 }
 
 // ── 미디어 로컬 캐싱 (이미지 & 영상 통합) ──────────────────────────
-async function cacheMedia(url, referer, force = false) {
+async function cacheMedia(dbMgr, url, referer, force = false) {
   const urlHash = require('crypto').createHash('md5').update(url).digest('hex');
   // 기본적으로 .webp로 시도하지만, 이미 저장된 파일이 있으면 그 확장자를 따름
   let existingFile = null;
@@ -170,7 +170,7 @@ async function cacheMedia(url, referer, force = false) {
 
     https.get(options, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
-        cacheMedia(res.headers.location, referer, force).then(resolve).catch(reject);
+        cacheMedia(dbMgr, res.headers.location, referer, force).then(resolve).catch(reject);
         return;
       }
       const chunks = [];
@@ -393,7 +393,7 @@ function extractImageUrls(html, baseUrl) {
   return Array.from(urls);
 }
 
-function parseList(html) {
+function parseList(html, gallId) {
   const rows = []; const pages = []; const pageRe = /&page=(\d+)/g; let pm;
   while ((pm = pageRe.exec(html))) { const p = parseInt(pm[1]); if (pages.indexOf(p) === -1) pages.push(p); }
   pages.sort((a, b) => a - b);
@@ -418,7 +418,7 @@ function parseList(html) {
 
 
     // 2. 제목 및 링크 추출 (번호 포함)
-    const titM = titCell.match(new RegExp(`href="([^"]+id=${GALL_ID}[^"]+no=(\\d+)[^"]*)"[^>]*>([\\s\\S]*?)<\\/a>`, "i"));
+    const titM = titCell.match(new RegExp(`href="([^"]+id=${gallId}[^"]+no=(\\d+)[^"]*)"[^>]*>([\\s\\S]*?)<\\/a>`, "i"));
     if (!titM) continue;
 
     const noFromUrl = titM[2];
@@ -797,7 +797,7 @@ async function handleApi(parsed, res) {
       if (page === "1" && !q && mode === "all") {
         const gall = GALLERIES[gallId];
         fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=1`, SOURCE + '/').then(html => {
-          const list = parseList(html);
+          const list = parseList(html, gallId);
           mergeCacheFromList(dbMgr, gallId, 1, list);
         }).catch(e => console.error("[Background Sync Error]", e.message));
       }
@@ -1028,7 +1028,7 @@ async function processItem(dbMgr, gallId, item, referer = SOURCE + '/') {
       const hashes = [];
       for (const img of post.images) {
         try {
-          const result = await cacheImage(img, item.href, item.force);
+          const result = await cacheImage(dbMgr, img, item.href, item.force);
           if (result && result.path) {
             cached.push(result.path);
             hashes.push(result.originalHash);
@@ -1102,7 +1102,7 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
   try {
     for (let bp = 1; bp <= 1; bp++) { // 퀵싱크는 1페이지만 빠르게
       const html = await fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${bp}&exception_mode=recommend`, SOURCE + '/');
-      const list = parseList(html);
+      const list = parseList(html, gallId);
       for (const item of list.items) {
         const prev = await dbMgr.getPost(item.no);
         if (prev && prev.type !== "best") {
@@ -1117,7 +1117,7 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
     for (let p = 1; p <= pCount; p++) {
       const listUrl = `${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${p}`;
       const html = await fetchText(listUrl, SOURCE + '/');
-      const list = parseList(html); mergeCacheFromList(dbMgr, gallId, p, list);
+      const list = parseList(html, gallId); mergeCacheFromList(dbMgr, gallId, p, list);
 
       const targets = [];
       for (const i of list.items) { if ((p <= 3 || isManual) ? true : await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
@@ -1158,7 +1158,7 @@ async function startupCatchup(dbMgr, gallId) {
   crawlingStates[gallId] = true; try {
     for (let p = 1; p <= STARTUP_MAX_PAGES; p++) {
       const html = await fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${p}`);
-      const list = parseList(html); await mergeCacheFromList(dbMgr, gallId, p, list);
+      const list = parseList(html, gallId); await mergeCacheFromList(dbMgr, gallId, p, list);
 
       const targets = [];
       for (const i of list.items) { if (p <= 3 ? true : await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
@@ -1220,7 +1220,7 @@ async function sniffer(gallId) {
   try {
     const listUrl = `${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=1`;
     const html = await fetchTextHead(listUrl, SOURCE + '/');
-    const list = parseList(html);
+    const list = parseList(html, gallId);
     const currentMax = Math.max(...list.items.map(i => Number(i.no) || 0));
 
     if (state.lastKnownMaxId === 0) {
@@ -1293,7 +1293,7 @@ async function commentRecoveryEngine(dbMgr, gallId) {
           if (parsedPost.images && parsedPost.images.length > 0 && localImages.length === 0) {
             const cached = [];
             for (const img of parsedPost.images) {
-              try { const p = await cacheImage(img, post.href); if (p) cached.push(p); } catch (e) { }
+              try { const p = await cacheImage(dbMgr, img, post.href); if (p) cached.push(p); } catch (e) { }
             }
             localImages = cached;
           }
