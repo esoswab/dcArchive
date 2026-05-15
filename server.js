@@ -818,12 +818,14 @@ async function handleApi(parsed, res) {
     const sm = parsed.query.sm || "all";
 
     try {
-      if (page === "1" && !q && mode === "all") {
+      if (page === "1" && !q && mode === "all" && GALLERY_SETTINGS[gallId]?.enabled !== false && !isIpThrottled) {
         const gall = GALLERIES[gallId];
         fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=1`, SOURCE + '/').then(html => {
           const list = parseList(html, gallId);
           mergeCacheFromList(dbMgr, gallId, 1, list);
-        }).catch(e => console.error("[Background Sync Error]", e.message));
+        }).catch(e => {
+          if (e.message !== "IP_THROTTLED") console.error("[Background Sync Error]", e.message);
+        });
       }
 
       const result = await dbMgr.getList({ mode, page, q, sm });
@@ -1255,6 +1257,7 @@ async function activeRangeCleaner(dbMgr, gallId) {
     );
 
     for (const t of targets) {
+      if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) break;
       await processItem(dbMgr, gallId, t);
       await jitterWait(3000, 7000);
     }
