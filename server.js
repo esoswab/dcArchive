@@ -19,13 +19,15 @@ const GALLERIES = {
     id: "vr", 
     name: "브이알챗", 
     type: "mgallery", 
-    dbFile: "archive.db" 
+    dbFile: "archive.db",
+    color: "#3568d4"
   },
   "nevernesstoeverness": { 
     id: "nevernesstoeverness", 
     name: "네버네스 투 에버네스", 
     type: "mgallery", 
-    dbFile: "archive_nte.db" 
+    dbFile: "archive_nte.db",
+    color: "#8b5cf6"
   }
 };
 
@@ -754,23 +756,35 @@ async function handleApi(parsed, res) {
       const cmtStats = await dbMgr.get("SELECT COUNT(DISTINCT postNo) as cnt FROM comments");
 
       let totalSize = 0;
+      let lastDaySize = 0;
       const now = Date.now();
+      const oneDayAgo = now - (24 * 60 * 60 * 1000);
+
       if (fs.existsSync(MEDIA_DIR)) {
         const files = fs.readdirSync(MEDIA_DIR);
         for (const file of files) {
           try {
-            const fstat = fs.statSync(path.join(MEDIA_DIR, file));
+            const fpath = path.join(MEDIA_DIR, file);
+            const fstat = fs.statSync(fpath);
             totalSize += fstat.size;
+            if (fstat.mtimeMs > oneDayAgo) {
+              lastDaySize += fstat.size;
+            }
           } catch (e) { }
         }
       }
+
+      const lastDayMB = (lastDaySize / 1024 / 1024).toFixed(2);
+      const estimatedMonthGB = ((lastDaySize * 30) / 1024 / 1024 / 1024).toFixed(2);
 
       send(res, 200, JSON.stringify({
         posts: stats.total,
         deleted: stats.deleted,
         comments: cmtStats.cnt,
         storage: {
-          total: (totalSize / 1024 / 1024).toFixed(2) + " MB"
+          total: (totalSize / 1024 / 1024).toFixed(2) + " MB",
+          lastDay: lastDayMB + " MB",
+          estimatedMonth: estimatedMonthGB + " GB"
         }
       }), "application/json");
     } catch (e) { send(res, 500, e.message); }
@@ -782,6 +796,7 @@ async function handleApi(parsed, res) {
       gallId: gall.id, 
       gallName: gall.name, 
       gallType: gall.type,
+      gallColor: gall.color || "#3568d4",
       allGalleries: Object.values(GALLERIES).map(g => ({ id: g.id, name: g.name }))
     }), "application/json");
     return true;

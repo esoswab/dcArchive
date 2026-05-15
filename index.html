@@ -634,7 +634,7 @@
   <script>
     // URL 경로에서 갤러리 ID 추출 (/list/vr -> vr)
     let gallId = location.pathname.split('/')[2] || "vr";
-    let gallName = "브이알챗";
+    let gallName = "";
 
     const qs = new URLSearchParams(location.search);
     const pageParam = Number(qs.get('page')) || 1;
@@ -648,6 +648,11 @@
         const config = await res.json();
         gallId = config.gallId;
         gallName = config.gallName;
+        const gallColor = config.gallColor || "#3568d4";
+        
+        // 테마 색상 적용
+        document.documentElement.style.setProperty('--accent', gallColor);
+        document.documentElement.style.setProperty('--soft', gallColor + '15'); // 15% 투명도
         
         document.title = `${gallName} 이미지 아카이브`;
         document.getElementById('headerTitle').textContent = `${gallName} 아카이브`;
