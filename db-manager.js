@@ -178,7 +178,11 @@ class GalleryDB {
         rawText, contentHtml, eSnO, boardType, gallType, uid
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(no) DO UPDATE SET
-        type        = CASE WHEN excluded.type IS NULL THEN posts.type WHEN excluded.type = 'best' THEN 'best' ELSE excluded.type END,
+        type        = CASE 
+                        WHEN excluded.type = 'notice' OR posts.type = 'notice' THEN 'notice'
+                        WHEN excluded.type = 'best' OR posts.type = 'best' THEN 'best'
+                        ELSE 'normal'
+                      END,
         deleted     = excluded.deleted,
         title       = excluded.title,
         author      = excluded.author,
