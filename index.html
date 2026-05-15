@@ -559,6 +559,7 @@
           <select id="gallSelector" class="btn" style="background:var(--soft); border-color:var(--accent); font-weight:700; padding: 8px 12px;">
             <!-- 갤러리 목록이 동적으로 채워짐 -->
           </select>
+          <button id="btnToggleCrawler" class="btn" style="font-size:12px; padding:8px 12px; font-weight:700; min-width:110px;">로딩 중...</button>
         </div>
         <div class="controls-group">
           <div class="searchbar">
@@ -687,6 +688,24 @@
         document.getElementById('headerTitle').textContent = `${gallName} 아카이브`;
         document.getElementById('footerText').textContent = `${gallName} 스타일 백업 저장소`;
         document.getElementById('backToList').href = `/list/${gallId}`;
+
+        // 수집 상태 토글 버튼 생성
+        const btnToggle = document.getElementById('btnToggleCrawler');
+        if (btnToggle) {
+          const updateBtn = (enabled) => {
+            btnToggle.textContent = enabled ? "🟢 수집 중" : "🔴 수집 중단됨";
+            btnToggle.style.background = enabled ? "var(--soft)" : "#fee2e2";
+            btnToggle.style.color = enabled ? "var(--accent)" : "#b91c1c";
+            btnToggle.style.borderColor = enabled ? "var(--accent)" : "#f87171";
+          };
+          updateBtn(config.crawlerEnabled);
+          btnToggle.onclick = async () => {
+            const newState = btnToggle.textContent.includes("중단됨");
+            const tr = await fetch(`/api/toggle-crawler?gall=${gallId}&enabled=${newState}`);
+            const td = await tr.json();
+            if (td.success) updateBtn(td.enabled);
+          };
+        }
 
         // 갤러리 셀렉터 구성
         const selector = document.getElementById('gallSelector');

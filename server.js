@@ -704,6 +704,14 @@ async function handleApi(parsed, res) {
   const dbMgr = dbManagers[gallId];
   if (!dbMgr) return send(res, 404, JSON.stringify({ error: "Invalid gallery ID" }), "application/json");
 
+  if (parsed.pathname === "/api/toggle-crawler") {
+    const enabled = parsed.query.enabled === "true";
+    GALLERY_SETTINGS[gallId] = { ...GALLERY_SETTINGS[gallId], enabled };
+    saveGallerySettings();
+    send(res, 200, JSON.stringify({ success: true, enabled }), "application/json");
+    return true;
+  }
+
   if (parsed.pathname === "/api/watch-toggle") {
     const no = parsed.query.no;
     if (!no) return send(res, 400, JSON.stringify({ success: false }), "application/json");
@@ -797,6 +805,7 @@ async function handleApi(parsed, res) {
       gallName: gall.name, 
       gallType: gall.type,
       gallColor: gall.color || "#3568d4",
+      crawlerEnabled: GALLERY_SETTINGS[gallId]?.enabled !== false,
       allGalleries: Object.values(GALLERIES).map(g => ({ id: g.id, name: g.name }))
     }), "application/json");
     return true;
@@ -928,7 +937,9 @@ async function handleApi(parsed, res) {
 
 // 갤러리별 개별 감시 목록 파일 및 갱신 엔진
 const getWatchListFile = (gallId) => `watch-list_${gallId}.json`;
+const getGallerySettingsFile = () => `gallery-settings.json`;
 const WATCH_LISTS = {};
+let GALLERY_SETTINGS = {};
 
 function loadWatchList(gallId) {
   const file = getWatchListFile(gallId);
@@ -941,7 +952,21 @@ function saveWatchList(gallId) {
   try { fs.writeFileSync(getWatchListFile(gallId), JSON.stringify(WATCH_LISTS[gallId], null, 2), "utf-8"); } catch (e) { }
 }
 
+function loadGallerySettings() {
+  const file = getGallerySettingsFile();
+  if (fs.existsSync(file)) {
+    try { GALLERY_SETTINGS = JSON.parse(fs.readFileSync(file, "utf-8")); } catch (e) { }
+  }
+  for (const id in GALLERIES) {
+    if (!GALLERY_SETTINGS[id]) GALLERY_SETTINGS[id] = { enabled: true };
+  }
+}
+function saveGallerySettings() {
+  try { fs.writeFileSync(getGallerySettingsFile(), JSON.stringify(GALLERY_SETTINGS, null, 2), "utf-8"); } catch (e) { }
+}
+
 // 초기 로드
+loadGallerySettings();
 for (const id in GALLERIES) loadWatchList(id);
 
 // 5초마다 임시 파일 확인 (레거시 대응: watch-list.tmp는 기본 갤러리 'vr'로 처리)
@@ -1112,6 +1137,7 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
   const isManual = !!targetPages;
 
   if (!isManual && crawlingStates[gallId]) return;
+  if (!isManual && GALLERY_SETTINGS[gallId]?.enabled === false) return;
 
   crawlingStates[gallId] = true;
   try {
@@ -1147,6 +1173,7 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
 
 let refreshingBestStates = {};
 async function refreshBestPosts(dbMgr, gallId) {
+  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
   if (refreshingBestStates[gallId] || crawlingStates[gallId]) return; refreshingBestStates[gallId] = true;
   try {
     const watchList = WATCH_LISTS[gallId] || [];
@@ -1165,6 +1192,7 @@ async function refreshBestPosts(dbMgr, gallId) {
 }
 
 async function startupCatchup(dbMgr, gallId) {
+  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
   const gall = GALLERIES[gallId];
   const lastRow = await dbMgr.get(`SELECT MAX(no) as maxNo FROM posts WHERE archivedAt > 0`);
   const last = lastRow ? lastRow.maxNo : 0;
@@ -1197,6 +1225,7 @@ const CLEANER_RANGE = 3000; // 최신 글 번호 기준 3000개 범위 집중 �
 let cleanerOffset = 0;
 
 async function activeRangeCleaner(dbMgr, gallId) {
+  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
   if (crawlingStates[gallId] || isIpThrottled) return;
   try {
     const maxRow = await dbMgr.get(`SELECT MAX(no) as maxNo FROM posts`);
@@ -1222,6 +1251,10 @@ async function activeRangeCleaner(dbMgr, gallId) {
 let snifferStates = {};
 
 async function sniffer(gallId) {
+  if (GALLERY_SETTINGS[gallId]?.enabled === false) {
+    setTimeout(() => sniffer(gallId), 30000);
+    return;
+  }
   const dbMgr = dbManagers[gallId];
   const gall = GALLERIES[gallId];
   if (!snifferStates[gallId]) snifferStates[gallId] = { lastKnownMaxId: 0, sniperDelay: 3000 };
@@ -1277,6 +1310,7 @@ async function sniffer(gallId) {
 
 let recoveringCommentStates = {};
 async function commentRecoveryEngine(dbMgr, gallId) {
+  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
   if (recoveringCommentStates[gallId] || isIpThrottled) return;
   recoveringCommentStates[gallId] = true;
   try {
