@@ -15,17 +15,17 @@ const NOTIFICATION_URL = process.env.NOTIFICATION_URL;
 
 // [갤러리 통합 설정] - 앞으로 여기에 추가만 하면 자동으로 확장됩니다.
 const GALLERIES = {
-  "vr": { 
-    id: "vr", 
-    name: "브이알챗", 
-    type: "mgallery", 
+  "vr": {
+    id: "vr",
+    name: "브이알챗",
+    type: "mgallery",
     dbFile: "archive.db",
     color: "#3568d4"
   },
-  "nevernesstoeverness": { 
-    id: "nevernesstoeverness", 
-    name: "네버네스 투 에버네스", 
-    type: "mgallery", 
+  "nevernesstoeverness": {
+    id: "nevernesstoeverness",
+    name: "네버네스 투 에버네스",
+    type: "mgallery",
     dbFile: "archive_nte.db",
     color: "#8b5cf6"
   }
@@ -70,7 +70,7 @@ sharp.concurrency(1);             // 동시 처리 제한 (CPU/RAM 폭증 방지
 function logError(err, type = "Error") {
   const msg = `[${new Date().toLocaleString()}] [${type}] ${err.stack || err}\n`;
   console.error(msg);
-  try { fs.appendFileSync(ERROR_LOG, msg); } catch(e) {}
+  try { fs.appendFileSync(ERROR_LOG, msg); } catch (e) { }
 }
 process.on('uncaughtException', (err) => logError(err, "UncaughtException"));
 process.on('unhandledRejection', (reason) => logError(reason, "UnhandledRejection"));
@@ -181,7 +181,7 @@ async function cacheMedia(dbMgr, url, referer, force = false) {
         try {
           const buf = Buffer.concat(chunks);
           if (buf.length < 100) return resolve(null);
-          
+
           // 🚨 [용량 방어] 5MB가 넘어가는 '용량 폭탄'은 서버에 저장하지 않고 원본 링크 유지
           if (buf.length > 5 * 1024 * 1024) {
             console.log(`[Skip] 초대형 파일 제외 (${(buf.length / 1024 / 1024).toFixed(1)}MB): ${url}`);
@@ -750,10 +750,10 @@ async function handleApi(parsed, res) {
   if (parsed.pathname === "/api/refresh") {
     const mode = parsed.query.mode || "all";
     if (mode === "best" || mode === "all") refreshBestPosts(dbMgr, gallId).catch(() => { });
-    if (mode === "crawl" || mode === "all") backgroundCrawl(dbMgr, gallId).catch(() => { });
+    if (mode === "crawl" || mode === "all") backgroundCrawl(dbMgr, gallId, null, true).catch(() => { });
     if (mode === "pages") {
       const count = Math.min(Number(parsed.query.count || 5), 100);
-      backgroundCrawl(dbMgr, gallId, count).catch(() => { });
+      backgroundCrawl(dbMgr, gallId, count, true).catch(() => { });
     }
     send(res, 200, JSON.stringify({ ok: true }), "application/json");
     return true;
@@ -800,9 +800,9 @@ async function handleApi(parsed, res) {
   }
   if (parsed.pathname === "/api/config") {
     const gall = GALLERIES[gallId];
-    send(res, 200, JSON.stringify({ 
-      gallId: gall.id, 
-      gallName: gall.name, 
+    send(res, 200, JSON.stringify({
+      gallId: gall.id,
+      gallName: gall.name,
       gallType: gall.type,
       gallColor: gall.color || "#3568d4",
       crawlerEnabled: GALLERY_SETTINGS[gallId]?.enabled !== false,
@@ -1131,17 +1131,17 @@ async function processItem(dbMgr, gallId, item, referer = SOURCE + '/') {
 
 let crawlingStates = {};
 
-async function backgroundCrawl(dbMgr, gallId, targetPages) {
+async function backgroundCrawl(dbMgr, gallId, targetPages, isManual = false) {
   const gall = GALLERIES[gallId];
   const pCount = targetPages || CRAWL_PAGES;
-  const isManual = !!targetPages;
 
   if (!isManual && crawlingStates[gallId]) return;
-  if (!isManual && GALLERY_SETTINGS[gallId]?.enabled === false) return;
+  if (!isManual && (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled)) return;
 
   crawlingStates[gallId] = true;
   try {
     for (let bp = 1; bp <= 1; bp++) { // 퀵싱크는 1페이지만 빠르게
+      if (!isManual && (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled)) break;
       const html = await fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${bp}&exception_mode=recommend`, SOURCE + '/');
       const list = parseList(html, gallId);
       for (const item of list.items) {
@@ -1153,9 +1153,14 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
       }
       const targets = [];
       for (const i of list.items) { if (await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
-      for (const t of targets) { await processItem(dbMgr, gallId, t); await jitterWait(isManual ? 300 : 1000, isManual ? 600 : 2000); }
+      for (const t of targets) { 
+        if (!isManual && (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled)) break;
+        await processItem(dbMgr, gallId, t); 
+        await jitterWait(isManual ? 300 : 1000, isManual ? 600 : 2000); 
+      }
     }
     for (let p = 1; p <= pCount; p++) {
+      if (!isManual && (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled)) break;
       const listUrl = `${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${p}`;
       const html = await fetchText(listUrl, SOURCE + '/');
       const list = parseList(html, gallId); mergeCacheFromList(dbMgr, gallId, p, list);
@@ -1163,6 +1168,7 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
       const targets = [];
       for (const i of list.items) { if ((p <= 3 || isManual) ? true : await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
       for (const t of targets) {
+        if (!isManual && (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled)) break;
         await processItem(dbMgr, gallId, t, listUrl);
         await jitterWait(isManual ? 500 : 2000, isManual ? 1000 : 5000);
       }
@@ -1173,7 +1179,7 @@ async function backgroundCrawl(dbMgr, gallId, targetPages) {
 
 let refreshingBestStates = {};
 async function refreshBestPosts(dbMgr, gallId) {
-  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
+  if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) return;
   if (refreshingBestStates[gallId] || crawlingStates[gallId]) return; refreshingBestStates[gallId] = true;
   try {
     const watchList = WATCH_LISTS[gallId] || [];
@@ -1187,12 +1193,16 @@ async function refreshBestPosts(dbMgr, gallId) {
       LIMIT ?
     `, [BEST_REFRESH_LIMIT]);
 
-    for (const t of targets) { await processItem(dbMgr, gallId, t); await jitterWait(2000, 5000); }
+    for (const t of targets) { 
+      if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) break;
+      await processItem(dbMgr, gallId, t); 
+      await jitterWait(2000, 5000); 
+    }
   } finally { refreshingBestStates[gallId] = false; }
 }
 
 async function startupCatchup(dbMgr, gallId) {
-  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
+  if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) return;
   const gall = GALLERIES[gallId];
   const lastRow = await dbMgr.get(`SELECT MAX(no) as maxNo FROM posts WHERE archivedAt > 0`);
   const last = lastRow ? lastRow.maxNo : 0;
@@ -1200,12 +1210,17 @@ async function startupCatchup(dbMgr, gallId) {
 
   crawlingStates[gallId] = true; try {
     for (let p = 1; p <= STARTUP_MAX_PAGES; p++) {
+      if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) break;
       const html = await fetchText(`${SOURCE}/${gall.type}/board/lists/?id=${gall.id}&page=${p}`);
       const list = parseList(html, gallId); await mergeCacheFromList(dbMgr, gallId, p, list);
 
       const targets = [];
       for (const i of list.items) { if (p <= 3 ? true : await shouldProcess(dbMgr, gallId, i)) targets.push(i); }
-      for (const t of targets) { await processItem(dbMgr, gallId, t); await jitterWait(2000, 5000); }
+      for (const t of targets) { 
+        if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) break;
+        await processItem(dbMgr, gallId, t); 
+        await jitterWait(2000, 5000); 
+      }
 
       const pMin = Math.min(...list.items.filter(i => i.type !== "notice").map(i => Number(i.no)));
       if (targets.length === 0 && pMin > 0 && pMin < last) break;
@@ -1214,6 +1229,7 @@ async function startupCatchup(dbMgr, gallId) {
     const recentPosts = await dbMgr.query(`SELECT * FROM posts WHERE deleted = 0 ORDER BY no DESC LIMIT 50`);
     console.log(`[System:${gallId}] 최근 글 ${recentPosts.length}개 상태 집중 점검 중...`);
     for (const t of recentPosts) {
+      if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) break;
       await processItem(dbMgr, gallId, t);
       await new Promise(r => setTimeout(r, 500));
     }
@@ -1261,7 +1277,7 @@ async function sniffer(gallId) {
   const state = snifferStates[gallId];
 
   if (crawlingStates[gallId] || isIpThrottled) {
-    setTimeout(() => sniffer(gallId), 5000);
+    setTimeout(() => sniffer(gallId), 10000);
     return;
   }
 
@@ -1310,7 +1326,7 @@ async function sniffer(gallId) {
 
 let recoveringCommentStates = {};
 async function commentRecoveryEngine(dbMgr, gallId) {
-  if (GALLERY_SETTINGS[gallId]?.enabled === false) return;
+  if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) return;
   if (recoveringCommentStates[gallId] || isIpThrottled) return;
   recoveringCommentStates[gallId] = true;
   try {
@@ -1328,7 +1344,7 @@ async function commentRecoveryEngine(dbMgr, gallId) {
     console.log(`[Recovery:${gallId}] 누락 ${targets.length}개 / 최신 ${batch.length}개 처리`);
 
     for (const post of batch) {
-      if (isIpThrottled) break;
+      if (GALLERY_SETTINGS[gallId]?.enabled === false || isIpThrottled) break;
       try {
         const targetUrl = post.href || buildDcUrl(gallId, post.no, 1);
         const html = await fetchText(targetUrl, SOURCE + '/');
@@ -1369,11 +1385,11 @@ async function commentRecoveryEngine(dbMgr, gallId) {
     setTimeout(() => sniffer(id), 5000);
     setInterval(() => backgroundCrawl(dbMgr, id, 1).catch(() => { }), 5 * 60 * 1000);
     setInterval(() => backgroundCrawl(dbMgr, id, CRAWL_PAGES).catch(() => { }), 30 * 60 * 1000);
-    setTimeout(() => { 
-      refreshBestPosts(dbMgr, id); 
-      setInterval(() => refreshBestPosts(dbMgr, id), 10 * 60 * 1000); 
+    setTimeout(() => {
+      refreshBestPosts(dbMgr, id);
+      setInterval(() => refreshBestPosts(dbMgr, id), 10 * 60 * 1000);
     }, 3 * 60 * 1000);
-    
+
     setTimeout(() => {
       commentRecoveryEngine(dbMgr, id).catch(() => { });
       setInterval(() => commentRecoveryEngine(dbMgr, id).catch(() => { }), 60 * 1000);
@@ -1391,7 +1407,7 @@ http.createServer(async (req, res) => {
     if (await handleApi(parsed, res)) return;
 
     // 갤러리별 경로 처리 (/list/vr, /list/nevernesstoeverness 등)
-    const isGalleryPath = Object.keys(GALLERIES).some(id => 
+    const isGalleryPath = Object.keys(GALLERIES).some(id =>
       parsed.pathname === `/list/${id}` || parsed.pathname.startsWith(`/view/${id}/`)
     );
 
@@ -1423,13 +1439,13 @@ http.createServer(async (req, res) => {
   #   (SQLite Engine Activated)                     #
   #                                                #
   #   📡 Server : http://localhost:${PORT}          #`);
-  
+
   for (const id in GALLERIES) {
     const dbMgr = dbManagers[id];
     const stats = await dbMgr.get("SELECT COUNT(*) as total FROM posts");
     console.log(`  #   📦 [${id}] Posts: ${(stats?.total || 0).toLocaleString().padEnd(10)} items`);
   }
-  
+
   const mediaFiles = fs.existsSync(MEDIA_DIR) ? fs.readdirSync(MEDIA_DIR).length : 0;
   console.log(`  #   🖼️  Media : ${mediaFiles.toLocaleString().padEnd(10)} files cached`);
   console.log(`  #                                                #
